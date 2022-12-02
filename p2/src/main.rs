@@ -3,32 +3,53 @@ use std::fs;
 
 fn main() {
     fn score_q(q: &str) -> i32 {
-        if q == "Y" {
+        if q == "B" {
             2
-        } else if q == "X" {
+        } else if q == "A" {
             1
-        } else if q == "Z" {
+        } else if q == "C" {
             3
         } else {
             0
         }
     }
-    fn win(p: &str, q: &str) -> i32 {
-        // A X rock,
-        // B Y paper
-        // C Z scissors
+    fn play(p: &str, q:&str) -> String {
+        // A rock,
+        // B paper
+        // C scissors
+        // X lose Y draw Z win
         let m = vec![
-            ("A", "X", 3),
-            ("A", "Y", 6),
-            ("A", "Z", 0),
-
-            ("B", "X", 0),
-            ("B", "Y", 3),
-            ("B", "Z", 6),
-
-            ("C", "X", 6),
-            ("C", "Y", 0),
-            ("C", "Z", 3),
+            ("A", "X", "C"),
+            ("A", "Y", "A"),
+            ("A", "Z", "B"),
+            ("B", "X", "A"),
+            ("B", "Y", "B"),
+            ("B", "Z", "C"),
+            ("C", "X", "B"),
+            ("C", "Y", "C"),
+            ("C", "Z", "A"),
+        ];
+        for (p1, q1, s) in m {
+            if p1 == p && q1 == q {
+                return s.to_string();
+            }
+        }
+        return "?".to_string();
+    }
+    fn win(p: &str, q: &str) -> i32 {
+        // A rock,
+        // B paper
+        // C scissors
+        let m = vec![
+            ("A", "A", 3),
+            ("A", "B", 6),
+            ("A", "C", 0),
+            ("B", "A", 0),
+            ("B", "B", 3),
+            ("B", "C", 6),
+            ("C", "A", 6),
+            ("C", "B", 0),
+            ("C", "C", 3),
         ];
         for (p1, q1, s) in m {
             if p1 == p && q1 == q {
@@ -37,8 +58,8 @@ fn main() {
         }
         return -1000;
     }
-    //let f = "test.txt";
     let f = "input.txt";
+    //let f = "test.txt";
     let score = fs::read_to_string(f)
         .expect("read fail")
         .split('\n')
@@ -49,8 +70,9 @@ fn main() {
             }
             let p = v[0];
             let q = v[1];
-            println!("v='{:?}', {} + {}", v, score_q(q) , win(p, q));
-            score_q(q) + win(p, q)
+            let z = play(p, q);
+            println!("v='{:?}', {} + {}", v, score_q(z.as_str()), win(p, z.as_str()));
+            score_q(z.as_str()) + win(p, z.as_str())
         })
         .sum::<i32>();
     println!("score: {}", score);
