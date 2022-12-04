@@ -12,6 +12,10 @@ impl Interval {
     fn contains2(&self, other: &Interval) -> bool {
         self.contains(other) || other.contains(self)
     }
+    fn overlaps(&self, other: &Interval) -> bool {
+        (self.a <= other.a && self.b >= other.a) 
+        || (other.a <= self.b && other.b >= self.a) 
+    }
 }
 
 fn main() {
@@ -25,7 +29,8 @@ fn main() {
                 let v: Vec<usize> = p.split('-').map(|n| n.parse::<usize>().unwrap()).collect();
                 Interval { a: v[0], b: v[1] }
             }).collect();
-            if s[0].contains2(&s[1]) {1}else{0}
+            if s[0].overlaps(&s[1]) {1}else{0}
+            //if s[0].contains2(&s[1]) {1}else{0}
         }).sum::<usize>();
     println!("{s}");
 }
