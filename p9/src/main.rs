@@ -39,56 +39,53 @@ fn visualize(tails: &[(i32, i32)]) {
 }
 
 #[derive(Eq, Hash, PartialEq, Copy, Clone)]
-struct Pos(i32, i32);
+struct Position(i32, i32);
 #[derive(Clone, Copy)]
-struct Dir(i32, i32);
+struct Displacement(i32, i32);
 
-impl Dir {
+impl Displacement {
     fn new(c: &str) -> Self {
         match c {
-            "U" => Dir(1, 0),
-            "D" => Dir(-1, 0),
-            "L" => Dir(0, -1),
-            "R" => Dir(0, 1),
-            _ => Dir(-1000, 0),
+            "U" => Displacement(1, 0),
+            "D" => Displacement(-1, 0),
+            "L" => Displacement(0, -1),
+            "R" => Displacement(0, 1),
+            _ => Displacement(-1000, 0),
         }
     }
     fn norm2(&self) -> i32 {
         self.0 * self.0 + self.1 * self.1
     }
-    fn capped(&self) -> Self {
-        Dir(
-            self.0.signum(),
-            self.1.signum(),
-        )
+    fn unit(&self) -> Self {
+        Displacement(self.0.signum(), self.1.signum())
     }
 }
 
-impl ops::Add<Dir> for &Pos {
-    type Output = Pos;
-    fn add(self, dir: Dir) -> Pos {
-        Pos(self.0 + dir.0, self.1 + dir.1)
+impl ops::Add<Displacement> for &Position {
+    type Output = Position;
+    fn add(self, dir: Displacement) -> Position {
+        Position(self.0 + dir.0, self.1 + dir.1)
     }
 }
 
-impl ops::AddAssign<Dir> for Pos {
-    fn add_assign(&mut self, dir: Dir) {
+impl ops::AddAssign<Displacement> for Position {
+    fn add_assign(&mut self, dir: Displacement) {
         self.0 += dir.0;
         self.1 += dir.1;
     }
 }
 
-fn follow(lead: &Pos, follower: &Pos) -> Option<Pos> {
-    let dir = Dir(lead.0 - follower.0, lead.1 - follower.1);
+fn follow(lead: &Position, follower: &Position) -> Option<Position> {
+    let dir = Displacement(lead.0 - follower.0, lead.1 - follower.1);
     if dir.norm2() <= 2 {
         return None;
     }
-    Some(follower+dir.capped())
+    Some(follower + dir.unit())
 }
 
 fn solve<const N: usize>(f: &str) -> usize {
     let mut pos = HashSet::new();
-    let mut tails = [Pos(0i32, 0i32); N];
+    let mut tails = [Position(0i32, 0i32); N];
     pos.insert(tails[N - 1]);
     fs::read_to_string(f)
         .expect("read failed")
@@ -96,8 +93,9 @@ fn solve<const N: usize>(f: &str) -> usize {
         .filter(|l| l.len() > 0)
         .map(|l| {
             let input: Vec<&str> = l.split_whitespace().collect();
-            let d = Dir::new(input[0]);
-            let n = input[1].parse::<usize>().unwrap();
+            (Displacement::new(input[0]), input[1].parse::<usize>().unwrap())
+        })
+        .map(|(d, n)| {
             for _ in 0..n {
                 tails[0] += d;
 
