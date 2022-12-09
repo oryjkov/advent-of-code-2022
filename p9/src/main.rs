@@ -75,17 +75,19 @@ fn solve<const N: usize>(f: &str) -> usize {
                 tails[0].0 += d.0;
                 tails[0].1 += d.1;
 
-                tails
+                let state = tails[0];
+                tails[1..]
                     .iter_mut()
-                    .reduce(|accum, item| {
-                        if let Some(new_pos) = follow(accum, item) {
-                            item.0 = new_pos.0;
-                            item.1 = new_pos.1;
-                            item
+                    .scan(state, |state, item| {
+                        if let Some(new_pos) = follow(state, item) {
+                            *item = new_pos;
+                            *state = *item;
+                            Some(())
                         } else {
-                            item
+                            None
                         }
-                    });
+                    })
+                    .count();
                 pos.insert(tails[N - 1]);
             }
         })
