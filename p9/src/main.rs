@@ -6,11 +6,11 @@ mod test {
 
     #[test]
     fn test_part1() {
-        assert_eq!(solve::<3>("test.txt"), 13);
+        assert_eq!(solve::<2>("test.txt"), 13);
     }
     #[test]
     fn test_part2() {
-        assert_eq!(solve::<11>("test2.txt"), 36);
+        assert_eq!(solve::<10>("test2.txt"), 36);
     }
 }
 
@@ -41,9 +41,7 @@ fn visualize(tails: &[(i32, i32)]) {
 type Pos = (i32, i32);
 type Dir = (i32, i32);
 
-fn follow(lead: &mut Pos, direction: &Dir, follower: &Pos) -> Option<(Pos, Dir)> {
-    lead.0 += direction.0;
-    lead.1 += direction.1;
+fn follow(lead: &Pos, follower: &Pos) -> Option<(Pos, Dir)> {
     let d0 = (follower.0 - lead.0).abs();
     let d1 = (follower.1 - lead.1).abs();
     if d0 * d0 + d1 * d1 <= 2 {
@@ -64,10 +62,13 @@ fn apply(direction: &Dir, tails: &mut [(i32, i32)]) {
     loop {
         if let Some((head, new_ts)) = ts.split_first_mut() {
             ts = new_ts;
+            head.0 += dir.0;
+            head.1 += dir.1;
+
             if ts.len() == 0 {
                 break;
             }
-            if let Some((_, new_dir)) = follow(head, &dir, &ts[0]) {
+            if let Some((_, new_dir)) = follow(head, &ts[0]) {
                 dir = new_dir;
             } else {
                 break;
@@ -82,7 +83,7 @@ fn solve<const N: usize>(f: &str) -> usize {
     let mut pos = HashSet::new();
     //let mut h = (0i32, 0i32);
     let mut tails = [(0i32, 0i32); N];
-    pos.insert(tails[N - 2]);
+    pos.insert(tails[N - 1]);
     //visualize(&tails);
     fs::read_to_string(f)
         .expect("read failed")
@@ -124,7 +125,7 @@ fn solve<const N: usize>(f: &str) -> usize {
                     .count();
                     */
                 //visualize(&tails);
-                pos.insert(tails[N - 2]);
+                pos.insert(tails[N - 1]);
             }
         })
         .count();
@@ -132,6 +133,6 @@ fn solve<const N: usize>(f: &str) -> usize {
 }
 
 fn main() {
-    println!("part 1: {}", solve::<3>("input.txt"));
-    println!("part 2: {}", solve::<11>("input.txt"));
+    println!("part 1: {}", solve::<2>("input.txt"));
+    println!("part 2: {}", solve::<10>("input.txt"));
 }
