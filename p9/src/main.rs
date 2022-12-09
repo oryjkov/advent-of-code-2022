@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fs};
+use std::{collections::HashSet, fs, ops};
 
 #[cfg(test)]
 mod test {
@@ -38,24 +38,57 @@ fn visualize(tails: &[(i32, i32)]) {
     println!();
 }
 
-type Pos = (i32, i32);
+#[derive(Eq, Hash, PartialEq, Copy, Clone)]
+struct Pos(i32, i32);
+#[derive(Clone, Copy)]
+struct Dir(i32, i32);
+
+impl Dir {
+    fn new(c: &str) -> Self {
+        match c {
+            "U" => Dir(1, 0),
+            "D" => Dir(-1, 0),
+            "L" => Dir(0, -1),
+            "R" => Dir(0, 1),
+            _ => Dir(-1000, 0),
+        }
+    }
+    fn norm2(&self) -> i32 {
+        self.0 * self.0 + self.1 * self.1
+    }
+    fn capped(&self) -> Self {
+        Dir(
+            self.0.signum(),
+            self.1.signum(),
+        )
+    }
+}
+
+impl ops::Add<Dir> for &Pos {
+    type Output = Pos;
+    fn add(self, dir: Dir) -> Pos {
+        Pos(self.0 + dir.0, self.1 + dir.1)
+    }
+}
+
+impl ops::AddAssign<Dir> for Pos {
+    fn add_assign(&mut self, dir: Dir) {
+        self.0 += dir.0;
+        self.1 += dir.1;
+    }
+}
 
 fn follow(lead: &Pos, follower: &Pos) -> Option<Pos> {
-    let d0 = (follower.0 - lead.0).abs();
-    let d1 = (follower.1 - lead.1).abs();
-    if d0 * d0 + d1 * d1 <= 2 {
+    let dir = Dir(lead.0 - follower.0, lead.1 - follower.1);
+    if dir.norm2() <= 2 {
         return None;
     }
-
-    Some((
-        follower.0 + (lead.0 - follower.0).signum() * d0.min(1),
-        follower.1 + (lead.1 - follower.1).signum() * d1.min(1),
-    ))
+    Some(follower+dir.capped())
 }
 
 fn solve<const N: usize>(f: &str) -> usize {
     let mut pos = HashSet::new();
-    let mut tails = [(0i32, 0i32); N];
+    let mut tails = [Pos(0i32, 0i32); N];
     pos.insert(tails[N - 1]);
     fs::read_to_string(f)
         .expect("read failed")
@@ -63,17 +96,10 @@ fn solve<const N: usize>(f: &str) -> usize {
         .filter(|l| l.len() > 0)
         .map(|l| {
             let input: Vec<&str> = l.split_whitespace().collect();
-            let d = match input[0] {
-                "U" => (1, 0),
-                "D" => (-1, 0),
-                "L" => (0, -1),
-                "R" => (0, 1),
-                _ => (-1000, 0),
-            };
+            let d = Dir::new(input[0]);
             let n = input[1].parse::<usize>().unwrap();
             for _ in 0..n {
-                tails[0].0 += d.0;
-                tails[0].1 += d.1;
+                tails[0] += d;
 
                 let state = tails[0];
                 tails[1..]
