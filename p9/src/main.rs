@@ -39,57 +39,28 @@ fn visualize(tails: &[(i32, i32)]) {
 }
 
 type Pos = (i32, i32);
-type Dir = (i32, i32);
 
-fn follow(lead: &Pos, follower: &Pos) -> Option<(Pos, Dir)> {
+fn follow(lead: &Pos, follower: &Pos) -> Option<Pos> {
     let d0 = (follower.0 - lead.0).abs();
     let d1 = (follower.1 - lead.1).abs();
     if d0 * d0 + d1 * d1 <= 2 {
         return None;
     }
 
-    let new_pos = (
+    Some((
         follower.0 + (lead.0 - follower.0).signum() * d0.min(1),
         follower.1 + (lead.1 - follower.1).signum() * d1.min(1),
-    );
-    let new_dir = (new_pos.0 - follower.0, new_pos.1 - follower.1);
-    Some((new_pos, new_dir))
-}
-
-fn apply(direction: &Dir, tails: &mut [(i32, i32)]) {
-    let mut dir = direction.clone();
-    let mut ts = tails;
-    loop {
-        if let Some((head, new_ts)) = ts.split_first_mut() {
-            ts = new_ts;
-            head.0 += dir.0;
-            head.1 += dir.1;
-
-            if ts.len() == 0 {
-                break;
-            }
-            if let Some((_, new_dir)) = follow(head, &ts[0]) {
-                dir = new_dir;
-            } else {
-                break;
-            };
-        } else {
-            break;
-        }
-    }
+    ))
 }
 
 fn solve<const N: usize>(f: &str) -> usize {
     let mut pos = HashSet::new();
-    //let mut h = (0i32, 0i32);
     let mut tails = [(0i32, 0i32); N];
     pos.insert(tails[N - 1]);
-    //visualize(&tails);
     fs::read_to_string(f)
         .expect("read failed")
         .split('\n')
         .filter(|l| l.len() > 0)
-        //.take(1)
         .map(|l| {
             let input: Vec<&str> = l.split_whitespace().collect();
             let d = match input[0] {
@@ -101,30 +72,20 @@ fn solve<const N: usize>(f: &str) -> usize {
             };
             let n = input[1].parse::<usize>().unwrap();
             for _ in 0..n {
-                apply(&d, &mut tails);
-                /*
-                println!("move");
+                tails[0].0 += d.0;
+                tails[0].1 += d.1;
+
                 tails
                     .iter_mut()
-                    .scan((&mut h, d), |accum, item| {
-                        let lead = &mut accum.0;
-                        let direction = &accum.1;
-                        //println!("pre: lead: {:?} dir: {:?} follow: {:?}", lead, direction, item);
-                        if let Some((_, new_dir)) = follow(lead, direction, item) {
-                            //println!("after: {:?} {:?}, new_lead: {:?}", lead, new_dir, item);
-                            //item.0 = new_pos.0;
-                            //item.1 = new_pos.1;
-                            accum.0 = item;
-                            accum.1 = new_dir;
-                            Some(1) //(item, new_dir))
+                    .reduce(|accum, item| {
+                        if let Some(new_pos) = follow(accum, item) {
+                            item.0 = new_pos.0;
+                            item.1 = new_pos.1;
+                            item
                         } else {
-                            //println!("after: {:?}", lead);
-                            None
+                            item
                         }
-                    })
-                    .count();
-                    */
-                //visualize(&tails);
+                    });
                 pos.insert(tails[N - 1]);
             }
         })
