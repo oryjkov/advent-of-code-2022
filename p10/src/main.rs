@@ -1,5 +1,5 @@
 use std::fs;
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum Instr {
     Nop,
     Add(i32),
@@ -38,9 +38,9 @@ struct StateMachine<I> {
     iter: I,
     state: State,
 }
-impl<I> Iterator for StateMachine<I>
+impl<'a, I> Iterator for StateMachine<I>
 where
-    I: Iterator<Item = Instr>,
+    I: Iterator<Item = &'a Instr>,
 {
     type Item = i32;
     fn next(&mut self) -> Option<Self::Item> {
@@ -50,7 +50,7 @@ where
             self.state.instr.apply(&mut self.state.x);
             Some(old_x)
         } else if let Some(instr) = self.iter.next() {
-            self.state.instr = instr;
+            self.state.instr = *instr;
             self.state.sub_i = 1;
             Some(self.state.x)
         } else {
@@ -70,7 +70,7 @@ trait StateMachineIterator: Iterator + Sized {
         }
     }
 }
-impl<I: Iterator<Item = Instr>> StateMachineIterator for I {}
+impl<'a, I: Iterator<Item = &'a Instr>> StateMachineIterator for I {}
 
 fn parse_input(f: &str) -> Vec<Instr> {
     fs::read_to_string(f)
@@ -90,7 +90,7 @@ fn parse_input(f: &str) -> Vec<Instr> {
 
 fn solve_p1(f: &str) -> i32 {
     parse_input(f)
-        .into_iter()
+        .iter()
         .process_instrs()
         .enumerate()
         .filter(|(cycle, _)| cycle % 40 == 20)
@@ -100,7 +100,7 @@ fn solve_p1(f: &str) -> i32 {
 
 fn solve_p2(f: &str) {
     parse_input(f)
-        .into_iter()
+        .iter()
         .process_instrs()
         .enumerate()
         .map(|(cycle, x)| {
