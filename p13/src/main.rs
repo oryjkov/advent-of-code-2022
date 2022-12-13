@@ -37,10 +37,10 @@ mod test {
     fn test_compare() {
         let l1 = consume_list(b"[1,1,3]").unwrap().0;
         let l2 = consume_list(b"[1,1,5]").unwrap().0;
-        assert_eq!(compare(&l1, &l2), Some(true));
+        assert_eq!(compare(&l1, &l2), Ordering::Less);
         let l1 = consume_list(b"[1,1,1]").unwrap().0;
         let l2 = consume_list(b"[1,1,1]").unwrap().0;
-        assert_eq!(compare(&l1, &l2), None);
+        assert_eq!(compare(&l1, &l2), Ordering::Equal);
     }
     #[test]
     fn test_part1() {
@@ -111,34 +111,33 @@ fn consume_list(s: &[u8]) -> Option<(ListOrInt, usize)> {
     return Some((ListOrInt::List(rv), consumed));
 }
 
-fn compare_int_int(n1: i32, n2: i32) -> Option<bool> {
+fn compare_int_int(n1: i32, n2: i32) -> Ordering {
     if n1 < n2 {
-        Some(true)
+        Ordering::Less
     } else if n1 > n2 {
-        Some(false)
+        Ordering::Greater
     } else {
-        None
+        Ordering::Equal
     }
 }
 
-fn compare_list_list(l1: &Vec<ListOrInt>, l2: &Vec<ListOrInt>) -> Option<bool> {
+fn compare_list_list(l1: &Vec<ListOrInt>, l2: &Vec<ListOrInt>) -> Ordering {
     for i in 0..l1.len().min(l2.len()) {
-        if let Some(res) = compare(&l1[i], &l2[i]) {
-            return Some(res);
+        let res = compare(&l1[i], &l2[i]);
+        if res != Ordering::Equal {
+            return res;
         }
     }
     if l1.len() < l2.len() {
-        return Some(true);
+        return Ordering::Less;
     }
     if l2.len() < l1.len() {
-        return Some(false);
+        return Ordering::Greater;
     }
-    None
+    Ordering::Equal
 }
 
-// Compares l1 and l2, returns None if compare should continue, or Some(res)
-// if the result is known.
-fn compare(l1: &ListOrInt, l2: &ListOrInt) -> Option<bool> {
+fn compare(l1: &ListOrInt, l2: &ListOrInt) -> Ordering {
     match l1 {
         Int(int1) => match l2 {
             Int(int2) => compare_int_int(*int1, *int2),
@@ -164,7 +163,7 @@ fn solve_part1(f: &str) -> i32 {
             rv
         })
         .enumerate()
-        .filter(|(_, res)| res.is_none() || res.unwrap())
+        .filter(|(_, res)| *res != Ordering::Greater)
         .map(|(idx, _)| idx + 1)
         .sum::<usize>() as i32
 }
@@ -178,20 +177,9 @@ fn solve_part2(f: &str) -> i32 {
         .collect::<Vec<ListOrInt>>();
     let p1 = consume_list(b"[[2]]").unwrap().0;
     let p2 = consume_list(b"[[6]]").unwrap().0;
-    l.append(&mut vec![
-        p1.clone(),
-        p2.clone(),
-    ]);
+    l.append(&mut vec![p1.clone(), p2.clone()]);
     l.sort_by(|p1, p2| {
-        if let Some(res) = compare(p1, p2) {
-            if res {
-                Ordering::Less
-            } else {
-                Ordering::Greater
-            }
-        } else {
-            Ordering::Less
-        }
+        compare(p1, p2)
     });
     l.iter()
         .enumerate()
