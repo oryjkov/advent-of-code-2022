@@ -6,7 +6,6 @@ enum ListOrInt {
     List(Vec<ListOrInt>),
 }
 use ListOrInt::*;
-//struct Packet { //list: }
 
 #[cfg(test)]
 mod test {
@@ -51,6 +50,7 @@ mod test {
     #[test]
     fn test_part2() {
         assert_eq!(solve_part2("test.txt"), 140);
+        assert_eq!(solve_part2("input.txt"), 29025);
     }
 }
 
@@ -136,8 +136,10 @@ fn compare_list_list(l1: &Vec<ListOrInt>, l2: &Vec<ListOrInt>) -> Option<bool> {
     None
 }
 
+// Compares l1 and l2, returns None if compare should continue, or Some(res)
+// if the result is known.
 fn compare(l1: &ListOrInt, l2: &ListOrInt) -> Option<bool> {
-    let rv = match l1 {
+    match l1 {
         Int(int1) => match l2 {
             Int(int2) => compare_int_int(*int1, *int2),
             List(list2) => compare_list_list(&vec![Int(*int1)], list2),
@@ -146,12 +148,10 @@ fn compare(l1: &ListOrInt, l2: &ListOrInt) -> Option<bool> {
             Int(int2) => compare_list_list(list1, &vec![Int(*int2)]),
             List(list2) => compare_list_list(list1, list2),
         },
-    };
-    rv
+    }
 }
 
 fn solve_part1(f: &str) -> i32 {
-    //let mut packets = vec![];
     fs::read_to_string(f)
         .unwrap()
         .split("\n\n")
@@ -161,7 +161,6 @@ fn solve_part1(f: &str) -> i32 {
             let l1 = consume_list(&ls[0].as_bytes()).unwrap().0;
             let l2 = consume_list(&ls[1].as_bytes()).unwrap().0;
             let rv = compare(&l1, &l2);
-            println!("a<b: {:?}: a={} b={}", rv, ls[0], ls[1]);
             rv
         })
         .enumerate()
