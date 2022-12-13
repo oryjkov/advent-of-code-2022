@@ -1,6 +1,6 @@
-use std::{fs, str::from_utf8};
+use std::{cmp::Ordering, fs, str::from_utf8};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 enum ListOrInt {
     Int(i32),
     List(Vec<ListOrInt>),
@@ -49,7 +49,9 @@ mod test {
         assert_eq!(solve_part1("input.txt"), 5938);
     }
     #[test]
-    fn test_part2() {}
+    fn test_part2() {
+        assert_eq!(solve_part2("test.txt"), 140);
+    }
 }
 
 fn consume_int(s: &[u8]) -> Option<(i32, usize)> {
@@ -169,8 +171,34 @@ fn solve_part1(f: &str) -> i32 {
 }
 
 fn solve_part2(f: &str) -> i32 {
-    fs::read_to_string(f).unwrap().lines().count();
-    -1
+    let mut l = fs::read_to_string(f)
+        .unwrap()
+        .lines()
+        .filter(|l| l.len() > 0)
+        .map(|ls| consume_list(&ls.as_bytes()).unwrap().0)
+        .collect::<Vec<ListOrInt>>();
+    let p1 = consume_list(b"[[2]]").unwrap().0;
+    let p2 = consume_list(b"[[6]]").unwrap().0;
+    l.append(&mut vec![
+        p1.clone(),
+        p2.clone(),
+    ]);
+    l.sort_by(|p1, p2| {
+        if let Some(res) = compare(p1, p2) {
+            if res {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            }
+        } else {
+            Ordering::Less
+        }
+    });
+    l.iter()
+        .enumerate()
+        .filter(|(_, v)| **v == p1 || **v == p2)
+        .map(|(i, _)| i + 1)
+        .product::<usize>() as i32
 }
 
 fn main() {
