@@ -1,19 +1,22 @@
 use itertools::Itertools;
 use std::fs;
 
-fn print_tops(layout: &Vec<Vec<char>>) {
+type Layout = Vec<Vec<char>>;
+
+fn tops(layout: &Layout) -> String {
+    let mut s = "".to_string();
     layout
         .iter()
         .enumerate()
         .map(|(num, contents)| {
             if contents.len() > 0 {
-                print!("{}", contents[contents.len() - 1]);
+                s.push(contents[contents.len() - 1]);
             }
         })
         .count();
-        println!("");
+    s
 }
-fn print_layout(layout: &Vec<Vec<char>>) {
+fn print_layout(layout: &Layout) {
     layout
         .iter()
         .enumerate()
@@ -22,10 +25,54 @@ fn print_layout(layout: &Vec<Vec<char>>) {
         })
         .count();
 }
-fn main() {
-    //let f = "test.txt";
-    let f = "input.txt";
-    let (pre_layout, ops) = fs::read_to_string(f)
+
+// Converts the layout as given in the input into a list of boxs. Idea is to reverse then
+// transpose the input lines and read out contents in order.
+fn transpose(pre_layout: &[String]) -> Vec<Vec<char>> {
+    let a = pre_layout
+        .iter()
+        .rev()
+        .map(|s| s.chars().collect::<Vec<char>>())
+        .collect::<Vec<Vec<char>>>();
+    //println!("{:?}", a);
+    let mut rv: Vec<Vec<char>> = vec![];
+    let column = &a[0];
+    for (i, b_num) in column.iter().enumerate() {
+        if *b_num == ' ' {
+            continue;
+        }
+        let mut line: Vec<char> = vec![];
+        for j in 1..a.len() {
+            if a[j][i] == ' ' {
+                continue;
+            }
+            line.push(a[j][i]);
+        }
+        rv.push(line);
+    }
+    rv
+}
+struct Op {
+    num: usize,
+    from: usize,
+    to: usize,
+}
+
+fn do_op(op: &Op, layout: &mut Layout) {
+    for _ in 0..op.num {
+        let pop = layout[op.from].pop().unwrap();
+        layout[op.to].push(pop);
+    }
+}
+
+fn do_op_buf(op: &Op, layout: &mut Layout) {
+    let l = layout[op.from].len();
+    let pop = layout[op.from].split_off(l - op.num);
+    layout[op.to].extend(pop);
+}
+
+fn parse_input(f: &str) -> (Layout, Vec<Op>) {
+    let (pre_layout, pre_ops) = fs::read_to_string(f)
         .expect("read failed")
         .split('\n')
         .group_by(|l| l.len() == 0)
@@ -36,39 +83,9 @@ fn main() {
         .collect_tuple()
         .unwrap();
 
-    fn transpose(pre_layout: &[String]) -> Vec<Vec<char>> {
-        let a = pre_layout
-            .iter()
-            .rev()
-            .map(|s| s.chars().collect::<Vec<char>>())
-            .collect::<Vec<Vec<char>>>();
-        //println!("{:?}", a);
-        let mut rv: Vec<Vec<char>> = vec![];
-        let column = &a[0];
-        for (i, b_num) in column.iter().enumerate() {
-            if *b_num == ' ' {
-                continue;
-            }
-            let mut line: Vec<char> = vec![];
-            for j in 1..a.len() {
-                if a[j][i] == ' ' {
-                    continue;
-                }
-                line.push(a[j][i]);
-            }
-            rv.push(line);
-        }
-        rv
-    }
     let mut layout = transpose(&pre_layout);
-    print_layout(&layout);
-
-    struct Op {
-        num: usize,
-        from: usize,
-        to: usize,
-    }
-    ops.iter()
+    let ops = pre_ops
+        .iter()
         .map(|op_str| {
             let (num, from, to) = op_str
                 .split(' ')
@@ -83,14 +100,34 @@ fn main() {
                 to: to - 1,
             }
         })
-        .map(|op| {
-            for _ in 0..op.num {
-                let pop = layout[op.from].pop().unwrap();
-                layout[op.to].push(pop);
-            }
-        })
-        .count();
-    println!("after");
-    print_layout(&layout);
-    print_tops(&layout);
+        .collect::<Vec<Op>>();
+
+    (layout, ops)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_solve_p1() {
+        assert_eq!(solve_p1("test.txt"), "CMZ");
+    }
+    #[test]
+    fn test_solve_p2() {
+        assert_eq!(solve_p2("test.txt"), "MCD");
+    }
+}
+fn solve_p1(f: &str) -> String {
+    let (mut layout, ops) = parse_input(f);
+    ops.iter().map(|op| do_op(&op, &mut layout)).count();
+    tops(&layout)
+}
+fn solve_p2(f: &str) -> String {
+    let (mut layout, ops) = parse_input(f);
+    ops.iter().map(|op| do_op_buf(&op, &mut layout)).count();
+    tops(&layout)
+}
+fn main() {
+    let f = "input.txt";
+    println!("{}", solve_p2(f));
 }
