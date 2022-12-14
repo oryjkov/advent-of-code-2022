@@ -7,9 +7,14 @@ mod test {
     #[test]
     fn test_part1() {
         assert_eq!(solve_part1("test.txt"), 24);
+        assert_eq!(solve_part1("input.txt"), 618);
     }
     #[test]
-    fn test_part2() {}
+    fn test_part2() {
+        assert_eq!(solve_part2("test.txt"), 93);
+        assert_eq!(solve_part1("input.txt"), 26358);
+
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,9 +75,12 @@ impl Reservoir {
         // stopped
         Some(pos)
     }
-    // returns false when sand falls off screen
+    // returns false when sand falls off screen or the start is blocked.
     fn drop_sand(&mut self) -> bool {
         let mut pos = self.start;
+        if self.at(pos) != Tile::Air {
+            return false;
+        }
         loop {
             if let Some(new_pos) = self.next_pos(pos) {
                 if pos == new_pos {
@@ -204,7 +212,6 @@ fn read_map(f: &str) -> Reservoir {
 
 fn solve_part1(f: &str) -> i32 {
     let mut r = read_map(f);
-    r.print();
     let mut count = 0;
     while r.drop_sand() {
         count += 1;
@@ -215,8 +222,22 @@ fn solve_part1(f: &str) -> i32 {
 }
 
 fn solve_part2(f: &str) -> i32 {
-    fs::read_to_string(f).unwrap().lines().count();
-    -1
+    let mut r = read_map(f);
+    let bottom_row = r.height + 1;
+    let max_dim = (r.height+2).max(r.width);
+    let grow_by = max_dim;
+    println!("height {}, width: {}, grow_by {}", r.height, r.width, grow_by);
+    let left_col = r.left_col - grow_by;
+    let right_col = r.left_col + r.width + grow_by;
+    r.insert_block(Coord(bottom_row, left_col), Coord(bottom_row, right_col));
+    let mut count = 0;
+    while r.drop_sand() {
+        count += 1;
+        //r.print();
+        //println!("=================");
+    }
+    r.print();
+    count
 }
 
 fn main() {
