@@ -1,5 +1,6 @@
 use scanf::*;
 use std::collections::HashMap;
+use std::fmt::format;
 use std::{
     cell::{Cell, RefCell},
     fs,
@@ -49,7 +50,7 @@ struct Room {
     rate: i32,
     state: RefCell<ValveState>,
     visits: RefCell<i32>,
-    neibs: Vec<String>,
+    neibs: HashMap<String, i32>,
 }
 
 #[derive(Debug, Clone)]
@@ -59,8 +60,48 @@ struct PathElement {
 }
 type Map = HashMap<String, Room>;
 
-fn print_map(m: &Map){
-    m.iter().for_each(|(_, r)| println!("{}: r={}, {:?}, {:?}", r.name, r.rate, r.neibs, r.visits));
+fn condense(m: &mut Map) {
+    loop {
+        let mut cand = None;
+        for node in m.iter() {
+            if node.1.rate == 0 && node.1.neibs.len() == 2 {
+                cand = Some(node.0.clone());
+                break;
+            }
+        }
+        if cand.is_none() {
+            break;
+        }
+        // Remove the node and increase its neibs cost.
+        let r = m.remove(&cand.unwrap()).unwrap();
+        let mut iter = r.neibs.iter();
+        let (left, &left_cost) = iter.next().unwrap();
+        let (right, &right_cost) = iter.next().unwrap();
+        //println!("removed: {}, left: {}, right: {}", r.name, left, right);
+        //println!("was: {left}: {:?}, {right}: {:?}", m.get(left).unwrap().neibs, m.get(right).unwrap().neibs);
+        {
+            let left_neib = m.get_mut(left).unwrap();
+            left_neib.neibs.remove(&r.name).unwrap();
+            if left_neib.neibs.get(right).is_none() {
+                left_neib.neibs.insert(right.clone(), left_cost+right_cost);
+            }
+        }
+
+        {
+            let right_neib = m.get_mut(right).unwrap();
+            right_neib.neibs.remove(&r.name).unwrap();
+            if right_neib.neibs.get(right).is_none() {
+                right_neib.neibs.insert(left.clone(), left_cost+right_cost);
+            }
+        }
+        //println!("now: {left}: {:?}, {right}: {:?}", m.get(left).unwrap().neibs, m.get(right).unwrap().neibs);
+        //println!();
+    }
+}
+
+fn print_map(m: &Map) {
+    m.iter()
+        .for_each(|(_, r)| println!("{}: r={}, {:?}, {:?}", r.name, r.rate, r.neibs, r.visits));
 }
 
 fn read_in(f: &str) -> Map {
@@ -100,6 +141,10 @@ fn read_in(f: &str) -> Map {
             )
         })
         .for_each(|(v, r, vs)| {
+            let mut hm = HashMap::new();
+            vs.iter().for_each(|v| {
+                hm.insert(v.clone(), 1);
+            });
             m.insert(
                 v.clone(),
                 Room {
@@ -107,23 +152,16 @@ fn read_in(f: &str) -> Map {
                     rate: r,
                     state: RefCell::new(Closed),
                     visits: RefCell::new(vs.len() as i32),
-                    neibs: vs,
+                    neibs: hm,
                 },
             );
         });
 
-    let costs = m.clone();
-    for (_m, room) in m.iter_mut() {
-        room.neibs.sort_by(|r1, r2| {
-            let c1 = costs.get(r1).unwrap().rate;
-            let c2 = costs.get(r2).unwrap().rate;
-            c2.cmp(&c1)
-        });
-    }
     m
 }
 fn solve_part1(f: &str) -> i32 {
-    let m = read_in(f);
+    let mut m = read_in(f);
+    condense(&mut m);
     print_map(&m);
     find_max(&m, 30)
 }
@@ -142,7 +180,7 @@ fn path_cost(p: &Vec<PathElement>, len: usize) -> i32 {
 
 fn find_max(m: &Map, len: usize) -> i32 {
     let max = Cell::new(0);
-    let remaining =m.iter().filter(|(_, r)|r.rate>0).count();
+    let remaining = m.iter().filter(|(_, r)| r.rate > 0).count();
     walk(&m, len as i32, "AA", &mut vec![], remaining, &mut |p| {
         let m = max.get();
         let c = path_cost(p, len - 1);
@@ -172,23 +210,27 @@ where
     if node.rate > 0 && *node.state.borrow() == Closed {
         // Try to open first.
         p.push(PathElement {
-            room: from.to_string(),
+            room: from.to_string()+"_O",
             rate: node.rate,
         });
         *node.state.borrow_mut() = Open;
 
-        walk(m, budget - 1, from, p, remaining-1, f);
+        walk(m, budget - 1, from, p, remaining - 1, f);
         *node.state.borrow_mut() = Closed;
         p.pop();
     }
     *node.visits.borrow_mut() -= 1;
-    for neib in node.neibs.iter() {
-        p.push(PathElement {
-            room: neib.to_string(),
-            rate: 0,
-        });
-        walk(m, budget - 1, neib, p, remaining, f);
-        p.pop();
+    for (neib_name, &cost) in node.neibs.iter() {
+        for i in 0..cost {
+            p.push(PathElement {
+                room: neib_name.clone()+format!("_{}", i).as_str(),
+                rate: 0,
+            });
+        }
+        walk(m, budget - cost, neib_name, p, remaining, f);
+        for _ in 0..cost {
+            p.pop();
+        }
     }
     *node.visits.borrow_mut() += 1;
 }
@@ -204,6 +246,6 @@ fn solve_part2(f: &str) -> i32 {
 }
 
 fn main() {
-    println!("part 1: {}", solve_part1("test.txt"));
+    println!("part 1: {}", solve_part1("input.txt"));
     println!("part 2: {}", solve_part2("input.txt"));
 }
