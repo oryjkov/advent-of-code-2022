@@ -180,36 +180,71 @@ fn solve_part1(f: &str) -> i32 {
     find_max_fan(&m, 30, &shortest_paths)
 }
 
-fn find_max_fan(m: &Map, len: usize, shortest_paths: &HashMap<(String, String), i32>) -> i32 {
-    let from = "AA";
-    let max = Cell::new(0);
-    let checked = Cell::new(0);
-    let mut visited = HashSet::new();
-    visited.insert(from.to_string());
-    walk_fan(
-        &m,
-        len as i32,
-        from,
-        &mut vec![],
-        &mut visited,
-        shortest_paths,
-        &mut |p| {
-            let m = max.get();
-            let ch = checked.get();
-            let c = path_cost(p, len - 1);
-            if c > m {
-                max.set(c);
-                print!("checked: {ch}, max({}): {}, ", len, c);
-                print_path(p);
-            }
-            if ch % 1_000_000 == 0 {
-                println!("checked: {}", ch);
-            }
+fn solve_part2(f: &str) -> i32 {
+    let mut m = read_in(f);
+    let mut shortest_paths = HashMap::new();
+    for (node, _) in m.iter() {
+        let s = shortest_from(&m, node);
+        for (n, dist) in s.iter() {
+            shortest_paths.insert((node.clone(), n.clone()), *dist);
+            shortest_paths.insert((n.clone(), node.clone()), *dist);
+        }
+    }
+    find_all(&m, 26, &shortest_paths)
+}
 
-            checked.set(ch + 1);
-        },
-    );
-    max.get()
+fn find_all(m: &Map, len: usize, shortest_paths: &HashMap<(String, String), i32>) -> i32 {
+    let from = "AA";
+    let mut max = 0;
+
+    for budget in 1..26 {
+        let mut paths = vec![];
+
+        let mut visited = HashSet::new();
+        visited.insert(from.to_string());
+        walk_fan(
+            &m,
+            budget,
+            from,
+            &mut vec![],
+            &mut visited,
+            shortest_paths,
+            &mut |p| {
+                paths.push(p.clone());
+            },
+        );
+        println!("budget: {} found {} paths", budget, paths.len());
+        for p1 in &paths {
+            let mut visited = HashSet::new();
+            for el in p1 {
+                if el.rate > 0 {
+                    visited.insert(el.room[0..2].to_string());
+                }
+            }
+            let c1 = path_cost(p1, len - 1);
+
+            walk_fan(
+                &m,
+                len as i32,
+                from,
+                &mut vec![],
+                &mut visited,
+                shortest_paths,
+                &mut |p2| {
+                    let c2 = path_cost(p2, len - 1);
+                    if c1 + c2 > max {
+                        max = c1 + c2;
+                        println!("max({}):", max);
+                        print_path(p1);
+                        print_path(p2);
+                        println!();
+                    }
+                },
+            );
+        }
+    }
+
+    -1
 }
 
 // This version picks the next valve to open and goes straight to it.
@@ -287,6 +322,38 @@ fn path_cost(p: &Vec<PathElement>, len: usize) -> i32 {
         acc += p[i].rate * (len as i32 - i as i32);
     }
     acc
+}
+
+fn find_max_fan(m: &Map, len: usize, shortest_paths: &HashMap<(String, String), i32>) -> i32 {
+    let from = "AA";
+    let max = Cell::new(0);
+    let checked = Cell::new(0);
+    let mut visited = HashSet::new();
+    visited.insert(from.to_string());
+    walk_fan(
+        &m,
+        len as i32,
+        from,
+        &mut vec![],
+        &mut visited,
+        shortest_paths,
+        &mut |p| {
+            let m = max.get();
+            let ch = checked.get();
+            let c = path_cost(p, len - 1);
+            if c > m {
+                max.set(c);
+                print!("checked: {ch}, max({}): {}, ", len, c);
+                print_path(p);
+            }
+            if ch % 1_000_000 == 0 {
+                println!("checked: {}", ch);
+            }
+
+            checked.set(ch + 1);
+        },
+    );
+    max.get()
 }
 
 fn find_max(m: &Map, len: usize) -> i32 {
@@ -404,17 +471,8 @@ where
     *node.visits.borrow_mut() += 1;
 }
 
-fn solve_part2(f: &str) -> i32 {
-    /*
-    fs::read_to_string(f)
-        .unwrap()
-        .lines()
-        .count();
-     */
-    -1
-}
-
 fn main() {
-    println!("part 1: {}", solve_part1("input.txt"));
+    //println!("part 1: {}", solve_part1("input.txt"));
+    println!("part 2: {}", solve_part2("test.txt"));
     println!("part 2: {}", solve_part2("input.txt"));
 }
