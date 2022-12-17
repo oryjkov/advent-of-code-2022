@@ -6,7 +6,8 @@ mod test {
 
     #[test]
     fn test_part1() {
-        assert_eq!(solve_part1("test.txt"), _);
+        assert_eq!(solve_part1("test.txt"), 3068);
+        assert_eq!(solve_part1("input.txt"), 3224);
     }
     #[test]
     fn test_part2() {}
@@ -15,22 +16,33 @@ mod test {
 fn rocks() -> Vec<Rock> {
     vec![
         Rock {
-            bm: vec![vec![1, 1, 1, 1]],
+            bm: vec![vec![b'#', b'#', b'#', b'#']],
         },
         Rock {
-            bm: vec![vec![0, 1, 0], vec![1, 1, 1], vec![0, 1, 0]],
+            bm: vec![
+                vec![b'.', b'#', b'.'],
+                vec![b'#', b'#', b'#'],
+                vec![b'.', b'#', b'.'],
+            ],
         },
         Rock {
-            bm: vec![vec![0, 0, 1], vec![0, 0, 1], vec![1, 1, 1]],
+            bm: vec![
+                vec![b'.', b'.', b'#'],
+                vec![b'.', b'.', b'#'],
+                vec![b'#', b'#', b'#'],
+            ],
         },
         Rock {
-            bm: vec![vec![1], vec![1], vec![1], vec![1]],
+            bm: vec![vec![b'#'], vec![b'#'], vec![b'#'], vec![b'#']],
         },
         Rock {
-            bm: vec![vec![1, 1], vec![1, 1]],
+            bm: vec![vec![b'#', b'#'], vec![b'#', b'#']],
         },
     ]
 }
+
+const NUM_ROCKS : usize = 2022;
+const N2 : usize = 1000000000000;
 
 fn solve_part1(f: &str) -> i32 {
     let jets = fs::read_to_string(f)
@@ -38,28 +50,40 @@ fn solve_part1(f: &str) -> i32 {
         .lines()
         .filter(|l| l.len() > 0)
         .collect::<Vec<&str>>()[0]
-        .as_bytes();
+        .as_bytes()
+        .iter()
+        .map(|c| if *c == b'<' { -1 } else { 1 })
+        .collect::<Vec<isize>>();
     let rocks = rocks();
-    let mut field = Field {
-        rows: vec![[1, 1, 1, 1, 1, 1, 1, 1, 1]],
-    };
-    field.grow(4);
-    let rock = &rocks[0];
-    let top_x = 2;
-    let mut top_y = 0;
-    loop {
-        field.try_place(&rocks[0], top_x, top_y).show();
-        if field.check(rock, top_x, top_y + 1) {
-            top_y += 1;
-        } else {
+    let mut field = Field::new();
+    let mut jets_iter = jets.iter().cycle();
+    for (n, rock) in rocks.iter().cycle().enumerate() {
+        if n >= NUM_ROCKS {
             break;
         }
-        println!();
-    }
+        field.grow(rock.height() + 3);
+        let mut top_x = 2;
+        let mut top_y = 0;
+        for offset in &mut jets_iter {
+            // show the rock
+            field.try_place(rock, top_x, top_y).show();
 
-    field.place(&rocks[0], top_x, top_y);
-    field.show();
-    -1
+            if field.check(rock, top_x + offset, top_y) {
+                top_x += offset;
+                // show the rock
+                field.try_place(rock, top_x, top_y).show();
+            }
+            let should_stop = !field.check(rock, top_x, top_y + 1);
+            if should_stop {
+                break;
+            }
+            top_y += 1;
+        }
+
+        field.place(rock, top_x, top_y);
+        field.show();
+    }
+    field.height() as i32
 }
 
 fn solve_part2(f: &str) -> i32 {
@@ -76,12 +100,15 @@ struct Rock {
     bm: Vec<Vec<u8>>,
 }
 impl Rock {
+    fn height(&self) -> usize {
+        self.bm.len()
+    }
     fn tentative(&self) -> Self {
         let mut rv = self.clone();
         rv.bm.iter_mut().for_each(|row| {
             row.iter_mut().for_each(|r| {
-                if *r > 0 {
-                    *r = 2
+                if !cell_empty(*r) {
+                    *r = b'@'
                 }
             })
         });
@@ -89,21 +116,33 @@ impl Rock {
     }
 }
 
+fn cell_empty(cell: u8) -> bool {
+    cell == b'.'
+}
+
+const EMPTY_ROW: [u8; 9] = [b'|', b'.', b'.', b'.', b'.', b'.', b'.', b'.', b'|'];
+const BOTTOM_ROW: [u8; 9] = [b'+', b'-', b'-', b'-', b'-', b'-', b'-', b'-', b'+'];
 impl Field {
+    fn new() -> Self {
+        Field {
+            rows: vec![BOTTOM_ROW],
+        }
+    }
+
     fn height(&self) -> usize {
         self.rows.len() - 1
     }
     // Checks if placing a rock at x and with top at y is valid.
-    fn check(&self, rock: &Rock, top_x: usize, top_y: usize) -> bool {
+    fn check(&self, rock: &Rock, top_x: isize, top_y: usize) -> bool {
         rock.bm
             .iter()
             .enumerate()
             .try_fold(false, |_, (rock_y, row)| {
                 row.iter()
                     .enumerate()
-                    .filter(|(_, r)| **r > 0)
+                    .filter(|(_, cell)| !cell_empty(**cell))
                     .try_fold(false, |_, (rock_x, _)| {
-                        let x = rock_x + top_x;
+                        let x = rock_x as isize + top_x;
                         let y = rock_y + top_y;
                         if self.get_cell(x, y) {
                             None
@@ -116,60 +155,60 @@ impl Field {
     }
     // Returns true if there is a rock at this position.
     // If the row does not exist, then there is no rock there.
-    fn get_cell(&self, x: usize, y: usize) -> bool {
+    fn get_cell(&self, x: isize, y: usize) -> bool {
         let actual_y = self.rows.len() - y - 1;
-        let actual_x = x + 1;
+        if x <= -1 {
+            return true;
+        }
+        let actual_x = (x + 1) as usize;
         if actual_y >= self.rows.len() {
             false
-        } else if x >= self.rows[0].len() {
+        } else if actual_x >= self.rows[0].len() {
             true
         } else {
-            self.rows[actual_y][actual_x] != 0
+            !cell_empty(self.rows[actual_y][actual_x])
         }
     }
-    fn put_cell(&mut self, x: usize, y: usize, r: u8) {
+    fn put_cell(&mut self, x: isize, y: usize, cell: u8) {
         let actual_y = self.rows.len() - y - 1;
-        let actual_x = x + 1;
-        self.rows[actual_y][actual_x] = r;
+        let actual_x = (x + 1) as usize;
+        self.rows[actual_y][actual_x] = cell;
     }
 
     fn grow(&mut self, n: usize) {
-        (0..n).for_each(|_| self.rows.push([1, 0, 0, 0, 0, 0, 0, 0, 1]));
+        (0..n).for_each(|_| self.rows.push(EMPTY_ROW));
+    }
+    fn shrink(&mut self) {
+        while self.rows[self.rows.len() - 1] == EMPTY_ROW {
+            self.rows.pop();
+        }
     }
 
-    fn place(&mut self, rock: &Rock, top_x: usize, top_y: usize) {
+    fn place(&mut self, rock: &Rock, top_x: isize, top_y: usize) {
         rock.bm.iter().enumerate().for_each(|(rock_y, row)| {
             row.iter()
                 .enumerate()
-                .filter(|(_, r)| **r > 0)
-                .for_each(|(rock_x, r)| {
-                    self.put_cell(top_x + rock_x, top_y + rock_y, *r);
+                .filter(|(_, cell)| !cell_empty(**cell))
+                .for_each(|(rock_x, cell)| {
+                    self.put_cell(top_x + rock_x as isize, top_y + rock_y, *cell)
                 });
         });
+        self.shrink();
     }
 
-    fn try_place(&self, rock: &Rock, top_x: usize, top_y: usize) -> Field {
+    fn try_place(&self, rock: &Rock, top_x: isize, top_y: usize) -> Field {
         let mut rv = self.clone();
         rv.place(&rock.tentative(), top_x, top_y);
         rv
     }
 
     fn show(&self) {
+        return;
         self.rows.iter().rev().for_each(|row| {
-            row.iter().for_each(|r| {
-                print!(
-                    "{}",
-                    if *r == 0 {
-                        '.'
-                    } else if *r == 2 {
-                        '@'
-                    } else {
-                        'x'
-                    }
-                )
-            });
+            row.iter().for_each(|cell| print!("{}", *cell as char));
             println!();
-        })
+        });
+        println!();
     }
 }
 
