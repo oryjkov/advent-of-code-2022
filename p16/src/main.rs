@@ -193,6 +193,9 @@ fn solve_part2(f: &str) -> i32 {
     find_all(&m, 26, &shortest_paths)
 }
 
+// A hacky way to solve part 2. It generates all the possible solutions with a single actor
+// for times ranging from 1..26 minutes. Then for each of those solution it solves for the second
+// actor trying to visit the remaining rooms in 26 minutes. Runs in around 6.5 minutes.
 fn find_all(m: &Map, len: usize, shortest_paths: &HashMap<(String, String), i32>) -> i32 {
     let from = "AA";
     let mut max = 0;
