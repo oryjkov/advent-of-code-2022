@@ -1,7 +1,5 @@
 use std::{
-    collections::VecDeque,
     fs,
-    ops::{Shl, ShlAssign},
     time::{Duration, Instant},
 };
 
@@ -16,7 +14,8 @@ mod test {
     }
     #[test]
     fn test_part2() {
-        //assert_eq!(solve_part2("test.txt"), 1514285714288);
+        assert_eq!(solve_part2("test.txt"), 1514285714288);
+        assert_eq!(solve_part2("input.txt"), 1595988538691);
     }
 }
 
