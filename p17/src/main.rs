@@ -127,17 +127,7 @@ impl BitField {
     }
 }
 
-fn bit_solve(f: &str, n: usize) -> i64 {
-    let jets = fs::read_to_string(f)
-        .unwrap()
-        .lines()
-        .filter(|l| l.len() > 0)
-        .collect::<Vec<&str>>()[0]
-        .as_bytes()
-        .iter()
-        .map(|b| if *b == b'>' { 1 } else { 0 })
-        .collect::<Vec<u8>>();
-
+fn find_cycles(jets: &[u8], n: usize) -> Option<usize> {
     let rocks = bit_rocks();
     let mut field = BitField::new();
     let start = Instant::now();
@@ -177,7 +167,140 @@ fn bit_solve(f: &str, n: usize) -> i64 {
     }
 
     let mut jets_offset = 0;
+    let lcm = rocks.len() * jets.len();
+    let mut at_lcm = 0;
+    let mut seq = vec![];
     for i in 0..n {
+        let rock_num = i % 5;
+        let rock_height = rocks[rock_num].1;
+        let mut field_mask = 0u32;
+        let mut depth = 0;
+
+        let mut rock = shift_table[rock_num * 8 + pre_shifted[jets_offset] as usize];
+        jets_offset = (jets_offset + 3) % jl;
+        loop {
+            let shift = pre_shifted[jets_offset] & 4;
+            jets_offset = (jets_offset + 1) % jl;
+            //println!("shift: '{}', before: {:8x}", shift as char, rock);
+            let shifted = if shift == 0 {
+                rock.rotate_left(1)
+            } else {
+                rock.rotate_right(1)
+            };
+            if (shifted & 0x80808080) == 0 && (shifted & field_mask) == 0 {
+                rock = shifted;
+            }
+            field_mask =
+                field_mask.overflowing_shl(8).0 + field.rows[field.rows.len() - 1 - depth] as u32;
+            //println!("depth: {depth}, rock: {:8x}, mask: {:8x}", rock, field_mask);
+            if rock & field_mask != 0 {
+                break;
+            }
+            depth += 1;
+        }
+
+        let len = field.rows.len();
+
+        for j in len - depth..len {
+            //println!("{:2x} to row {}", (rock & 0xff) as u8, j);
+            field.rows[j] |= (rock & 0xff) as u8;
+            rock = rock.overflowing_shr(8).0;
+        }
+
+        for _ in len..len - depth + rock_height {
+            field.rows.push((rock & 0xff) as u8);
+            rock = rock.overflowing_shr(8).0;
+        }
+
+        if field.rows.len() > 1_000_000 {
+            field.shrink_bottom();
+        }
+        if i % lcm == 0 && i > 0 {
+            //println!("height diff at lcm: {}", field.height() - at_lcm);
+            seq.push(field.height() - at_lcm);
+            at_lcm = field.height();
+        }
+    }
+    // find cycles
+    let cycle_start = 1;
+    for period in 1..seq.len() / 8 {
+        //println!("try period {}", period);
+        let mut ok = false;
+        let mut j = cycle_start;
+        while j + period < seq.len() {
+            ok = true;
+            if seq[j] != seq[period + j] {
+                //println!( "failed at j={j},{}, {} != {}", period + j, seq[j], seq[period + j]);
+                ok = false;
+                break;
+            }
+            j += period;
+        }
+        if ok {
+            return Some(period);
+        }
+    }
+    None
+}
+
+// Finds a cycle and uses it to speed up search.
+fn cycle_solve(f: &str, n: usize) -> i64 {
+    let jets = fs::read_to_string(f)
+        .unwrap()
+        .lines()
+        .filter(|l| l.len() > 0)
+        .collect::<Vec<&str>>()[0]
+        .as_bytes()
+        .iter()
+        .map(|b| if *b == b'>' { 1 } else { 0 })
+        .collect::<Vec<u8>>();
+
+    let rocks = bit_rocks();
+    let mut field = BitField::new();
+
+    let mut shift_table = [0u32; 5 * 8];
+    let mut rock_idx = 0;
+    for (r, _) in bit_rocks() {
+        for s in 0usize..=7 {
+            let mut rock = r.bm.clone();
+            for j in (0..3).rev() {
+                let shift = s & (1 << j);
+                let shifted = if shift == 0 {
+                    rock << 1 & 0x7f7f7f7f
+                } else {
+                    rock >> 1 & 0x7f7f7f7f
+                };
+
+                if rock.count_ones() == shifted.count_ones() {
+                    rock = shifted;
+                }
+            }
+            shift_table[rock_idx * 8 + s] = rock;
+        }
+        rock_idx += 1;
+    }
+    let jl = jets.len();
+
+    let mut pre_shifted = vec![0; jl];
+    for i in 0..jl {
+        let mut sm = 0;
+        let mut jets_offset = i % jl;
+        for _ in 0..3 {
+            sm = sm << 1 | jets[jets_offset];
+            jets_offset = (jets_offset + 1) % jl;
+        }
+        pre_shifted[i] = sm;
+    }
+
+    let mut jets_offset = 0;
+    let lcm = rocks.len() * jets.len();
+
+    let start_from = 1;
+    let cycle_length = find_cycles(&jets, 351*8*(jets.len()*rocks.len()).min(n)).unwrap_or(0);
+    let mut height_at_start = 0;
+    let mut cycle_height = 0;
+    let mut i = 0;
+    while i < n {
         let rock_num = i % 5;
         let rock_height = rocks[rock_num].1;
         let mut field_mask = 0u32;
@@ -220,23 +343,26 @@ fn bit_solve(f: &str, n: usize) -> i64 {
             rock = rock.overflowing_shr(8).0;
         }
 
-        //println!("depth: {}", depth);
-        //field.show();
-
-        if field.rows.len() > 1_000_000 {
-            field.shrink_bottom();
+        if i % lcm == 0 && cycle_length > 0 {
+            if i / lcm == start_from {
+                height_at_start = field.height();
+                //println!( "cycle starts at {}, height: {}", start_from, height_at_start);
+            } else if i / lcm == cycle_length + start_from {
+                cycle_height = field.height() - height_at_start;
+                //println!( "cycle length: {}, cycle growth = {}", cycle_length, cycle_height);
+                loop {
+                    if i + cycle_length * lcm < n {
+                        i += cycle_length * lcm;
+                        field.cleared += cycle_height;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            //i += 1;
         }
-        if i % 100_000_000 == 1 {
-            let mrps = (i as f64) / start.elapsed().as_secs_f64() / 1e6;
-            let will_take = Duration::from_secs_f64(((n - i) as f64 / mrps) / 1e6);
-            println!("{}, Mrps: {:.2}, will take: {:?}", i, mrps, will_take);
-        }
+        i += 1;
     }
-    //field.show();
-    println!("jets used: {jets_offset}");
-    //field.show();
-    //        field.shrink_bottom();
-    //field.show();
     field.height() as i64
 }
 
@@ -297,10 +423,10 @@ fn solve(f: &str, n: usize) -> (i64, usize) {
 }
 
 fn solve_part1(f: &str) -> i64 {
-    bit_solve(f, NUM_ROCKS)
+    cycle_solve(f, NUM_ROCKS)
 }
 fn solve_part2(f: &str) -> i64 {
-    bit_solve(f, N2)
+    cycle_solve(f, N2)
 }
 
 #[derive(Clone, Debug)]
@@ -444,6 +570,6 @@ impl Field {
 }
 
 fn main() {
-    println!("part 1: {:?}", bit_solve("test.txt", 2022));
+    println!("part 1: {}", solve_part1("input.txt"));
     println!("part 2: {}", solve_part2("input.txt"));
 }
