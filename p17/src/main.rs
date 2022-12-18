@@ -1,4 +1,9 @@
-use std::{collections::VecDeque, fs, time::{Instant, Duration}};
+use std::{
+    collections::VecDeque,
+    fs,
+    ops::{Shl, ShlAssign},
+    time::{Duration, Instant},
+};
 
 #[cfg(test)]
 mod test {
@@ -7,7 +12,7 @@ mod test {
     #[test]
     fn test_part1() {
         assert_eq!(solve_part1("test.txt"), 3068);
-        assert_eq!(solve_part1("input.txt"), 3224);
+        //assert_eq!(solve_part1("input.txt"), 3224);
     }
     #[test]
     fn test_part2() {
@@ -46,7 +51,169 @@ fn rocks() -> Vec<Rock> {
 const NUM_ROCKS: usize = 2022;
 const N2: usize = 1_000_000_000_000;
 
-fn solve(f: &str, n: usize) -> i64 {
+#[derive(Clone, Copy)]
+struct BitRock {
+    bm: u32,
+}
+fn bit_rocks() -> Vec<(BitRock, usize)> {
+    vec![
+        ([0, 0, 0, 15 << 1], 1),
+        ([0, 1 << 3, 7 << 2, 1 << 3], 3),
+        ([0, 1 << 2, 1 << 2, 7 << 2], 3),
+        ([1 << 4, 1 << 4, 1 << 4, 1 << 4], 4),
+        ([0, 0, 3 << 3, 3 << 3], 2),
+    ]
+    .iter()
+    .map(|(ba, height)| {
+        let mut bm = 0u32;
+        bm = bm + ba[0];
+        bm = bm.overflowing_shl(8).0 + ba[1];
+        bm = bm.overflowing_shl(8).0 + ba[2];
+        bm = bm.overflowing_shl(8).0 + ba[3];
+
+        (BitRock { bm }, *height)
+    })
+    .collect()
+}
+
+#[derive(Clone)]
+struct BitField {
+    rows: Vec<u8>,
+    cleared: usize,
+}
+impl BitField {
+    fn new() -> Self {
+        BitField {
+            rows: vec![0x7f],
+            cleared: 0,
+        }
+    }
+    fn height(&self) -> usize {
+        self.rows.len() - 1 - self.cleared
+    }
+    // returns true if placement worked.
+    fn show(&self) {
+        for (n, row) in self.rows.iter().enumerate().rev() {
+            if n == 0 {
+                continue;
+            }
+            print!("{:4} {:3} |", n, *row);
+            for s in (0..7).rev() {
+                print!("{}", if *row & (1 << s) == 0 { '.' } else { '#' });
+            }
+            println!("|");
+        }
+        println!("{:4}     +-------+", -1);
+    }
+    fn shrink_bottom(&mut self) {
+        let cleared = self.rows.len() / 2;
+        self.rows = self.rows.split_off(cleared);
+        self.cleared += cleared;
+        return;
+
+        let mut mask = 0u8;
+        let mut i = self.rows.len() - 1;
+        while mask != 0x7f {
+            mask |= self.rows[i];
+            if i == 0 {
+                return;
+            }
+            i -= 1;
+        }
+        let can_clear = self.rows.len() - i;
+        self.rows = self.rows.split_off(can_clear);
+        self.cleared += can_clear;
+        return;
+    }
+}
+
+fn bit_solve(f: &str, n: usize) -> i64 {
+    let jets = fs::read_to_string(f)
+        .unwrap()
+        .lines()
+        .filter(|l| l.len() > 0)
+        .collect::<Vec<&str>>()[0]
+        .as_bytes()
+        .to_vec();
+
+    let rocks = bit_rocks();
+    let mut field = BitField::new();
+    let start = Instant::now();
+    let mut jets_offset = 0;
+    for i in 0..n {
+        let rock_num = i % rocks.len();
+        let mut rock = rocks[rock_num].0.bm;
+        let rock_height = rocks[rock_num].1;
+        let mut field_mask = 0u32;
+        let mut depth = 0;
+        //println!("new rock {:8x}", rock);
+
+        for _ in 0..3 {
+            let shift = jets[jets_offset % jets.len()];
+            //println!("shift: '{}', before: {:8x}", shift as char, rock);
+            jets_offset += 1;
+            let shifted = if shift == b'>' {
+                rock >> 1 & 0x7f7f7f7f
+            } else {
+                rock << 1 & 0x7f7f7f7f
+            };
+            if rock.count_ones() == shifted.count_ones() {
+                rock = shifted;
+            }
+        }
+        loop {
+            let shift = jets[jets_offset % jets.len()];
+            jets_offset += 1;
+            //println!("shift: '{}', before: {:8x}", shift as char, rock);
+            let shifted = if shift == b'>' {
+                rock >> 1 & 0x7f7f7f7f
+            } else {
+                rock << 1 & 0x7f7f7f7f
+            };
+            if (rock | field_mask).count_ones() == (shifted | field_mask).count_ones() {
+                rock = shifted;
+            }
+            field_mask =
+                field_mask.overflowing_shl(8).0 + field.rows[field.rows.len() - 1 - depth] as u32;
+            //println!("depth: {depth}, rock: {:8x}, mask: {:8x}", rock, field_mask);
+            if (rock | field_mask).count_ones() != (rock.count_ones() + field_mask.count_ones()) {
+                break;
+            }
+            depth += 1;
+        }
+
+        let old_len = field.rows.len();
+        if depth < rock_height {
+            field.rows.extend(vec![0; rock_height - depth]);
+        }
+
+        let start_row = old_len - depth;
+        for j in start_row..start_row + rock_height {
+            //println!("{:2x} to row {}", (rock & 0xff) as u8, j);
+            field.rows[j] |= (rock & 0xff) as u8;
+            rock = rock.overflowing_shr(8).0;
+        }
+        //println!("depth: {}", depth);
+        //field.show();
+
+        if field.rows.len() > 1_000_000 {
+            field.shrink_bottom();
+        }
+        if i % 1_000_000 == 1 {
+            let mrps = (i as f64) / start.elapsed().as_secs_f64() / 1e6;
+            let will_take = Duration::from_secs_f64(((n - i) as f64 / mrps) / 1e6);
+            println!("{}, Mrps: {:.2}, will take: {:?}", i, mrps, will_take);
+        }
+    }
+    field.show();
+    println!("jets used: {jets_offset}");
+    //field.show();
+    //        field.shrink_bottom();
+    //field.show();
+    field.height() as i64
+}
+
+fn solve(f: &str, n: usize) -> (i64, usize) {
     let jets = fs::read_to_string(f)
         .unwrap()
         .lines()
@@ -60,6 +227,7 @@ fn solve(f: &str, n: usize) -> i64 {
     let mut field = Field::new();
     let mut jets_iter = jets.iter().cycle();
     let start = Instant::now();
+    let mut jets_idx = 0;
     for (rock_num, rock) in rocks.iter().cycle().enumerate() {
         if rock_num >= n {
             break;
@@ -68,6 +236,7 @@ fn solve(f: &str, n: usize) -> i64 {
         let mut top_x = 2;
         let mut top_y = 0;
         for offset in &mut jets_iter {
+            jets_idx += 1;
             // show the rock
             //field.try_place(rock, top_x, top_y).show();
 
@@ -87,22 +256,24 @@ fn solve(f: &str, n: usize) -> i64 {
         //field.show();
         //field.show();
         if field.rows.len() > 1_000_000 {
-            field.shrink_bottom();
+            //field.shrink_bottom();
         }
         if rock_num % 10_000_000 == 1_000_000 {
             let mrps = (rock_num as f64) / start.elapsed().as_secs_f64() / 1e6;
-            let will_take = Duration::from_secs_f64(((n-rock_num) as f64 / mrps) / 1e6);
-            println!("{}, Mrps: {:.2}, will take: {:?}", rock_num, mrps, will_take );
+            let will_take = Duration::from_secs_f64(((n - rock_num) as f64 / mrps) / 1e6);
+            //println!( "{}, Mrps: {:.2}, will take: {:?}", rock_num, mrps, will_take);
         }
     }
-    field.height() as i64
+    field.show();
+    println!("jets used: {jets_idx}");
+    (field.height() as i64, jets_idx)
 }
 
 fn solve_part1(f: &str) -> i64 {
-    solve(f, NUM_ROCKS)
+    bit_solve(f, NUM_ROCKS)
 }
 fn solve_part2(f: &str) -> i64 {
-    solve(f, N2)
+    bit_solve(f, N2)
 }
 
 #[derive(Clone, Debug)]
@@ -235,8 +406,9 @@ impl Field {
     }
 
     fn show(&self) {
-        return;
-        self.rows.iter().rev().for_each(|row| {
+        //return;
+        self.rows.iter().enumerate().rev().for_each(|(idx, row)| {
+            print!("{:4} ", idx);
             row.iter().for_each(|cell| print!("{}", *cell as char));
             println!();
         });
@@ -245,6 +417,6 @@ impl Field {
 }
 
 fn main() {
-    println!("part 1: {}", solve_part1("input.txt"));
-    println!("part 2: {}", solve_part2("input.txt"));
+    println!("part 1: {:?}", bit_solve("test.txt", 2022));
+    println!("part 2: {}", solve_part2("test.txt"));
 }
