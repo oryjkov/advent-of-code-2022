@@ -8,6 +8,31 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_gradual_solve() {
+        //let blueprint = Blueprint::parse("Blueprint 1: Each ore robot costs 4 ore. Each clay robot costs 2 ore. Each obsidian robot costs 3 ore and 14 clay. Each geode robot costs 2 ore and 7 obsidian.").unwrap();
+        let blueprint = Blueprint::parse("Blueprint 2: Each ore robot costs 2 ore. Each clay robot costs 3 ore. Each obsidian robot costs 3 ore and 8 clay. Each geode robot costs 3 ore and 12 obsidian.").unwrap();
+
+        let resources = Resources::new();
+        let robots = [1, 0, 0, 0];
+
+        let mut max = 0;
+        let mut count: usize = 0;
+        let f = &mut |steps: &Vec<Option<Type>>, r: &Resources| {
+            count += 1;
+            //let g = play_out(blueprint, steps);
+            if max < r.resources[Geo] {
+                max = r.resources[Geo];
+                println!("{}: count: {count}, new max: {max}", blueprint.index,);
+                print_steps(steps);
+            }
+        };
+
+        gradual_solve(32, &resources, &robots, &mut vec![], &blueprint, f);
+        println!("tried {} combinations, max: {max}", count);
+        assert_eq!(max, 12);
+    }
+
+    #[test]
     fn test_play_out() {
         let blueprint = Blueprint::parse("Blueprint 1: Each ore robot costs 4 ore. Each clay robot costs 2 ore. Each obsidian robot costs 3 ore and 14 clay. Each geode robot costs 2 ore and 7 obsidian.").unwrap();
         assert_eq!(
@@ -85,13 +110,13 @@ mod test {
     #[test]
     fn test_part1() {
         assert_eq!(solve_part1("test.txt"), 33);
-        assert_eq!(solve_part1("test.txt"), 1725);
+        //assert_eq!(solve_part1("test.txt"), 1725);
     }
     #[test]
     fn test_part2() {}
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 struct Resources {
     resources: [usize; 4],
 }
@@ -109,7 +134,7 @@ impl Resources {
     fn collect_n(&self, robots: &Robots, n: usize) -> Self {
         let mut rv = self.resources.clone();
         for i in 0..4 {
-            rv[i] += robots[i]*n;
+            rv[i] += robots[i] * n;
         }
         Resources { resources: rv }
     }
@@ -208,15 +233,77 @@ impl Blueprint {
     }
 }
 
-// upper bound on how long will it take to build a robot given the resources and robots now.
-// assume no more building will happen.
-fn time_till_robot(robot: Type, resources: &Resources, robots: &Robots, blueprint: &Blueprint) {
-    let cost = blueprint.costs[robot];
-    for resource in [Ore, Clay, Obs, Geo] {
-        let time = cost[resource] - resources.resources[resource] / 1;
+// How long will it take to make a robot given these robots and resources.
+fn time_till_robot(
+    goal_robot: Type,
+    resources: &Resources,
+    robots: &Robots,
+    blueprint: &Blueprint,
+) -> usize {
+    let cost = blueprint.costs[goal_robot];
+    let mut max = 0;
+    for kind in [Ore, Clay, Obs, Geo] {
+        let resources_missing = cost[kind].saturating_sub(resources.resources[kind]);
+        let rate = robots[kind];
+        if rate == 0 {
+            continue;
+        }
+        let time = resources_missing / rate + if resources_missing % rate == 0 { 0 } else { 1 };
+        max = max.max(time);
+    }
+    max
+}
+
+fn get_to_goal(
+    goal_robot: Type,
+    resources: &Resources,
+    robots: &Robots,
+    blueprint: &Blueprint,
+) -> Vec<(Option<Type>, usize, Resources, Robots)> {
+    let can_build = blueprint.can_build(resources);
+    if can_build[goal_robot] {
+        let (new_resources, new_robots) = blueprint.build(goal_robot, resources, robots);
+        vec![(Some(goal_robot), 0, new_resources, new_robots)]
+    } else {
+        // How long would it take to get to goal if we try the various options
+        let options = vec![None, Some(Ore), Some(Clay), Some(Obs)];
+        let all_options = options
+            .into_iter()
+            .filter(|option| option.is_none() || can_build[option.unwrap()])
+            .map(|option| {
+                // We could build a robot of type Type. How long will it take to get to build a goal robot if we do that?
+                if let Some(robot) = option {
+                    let (new_resources, new_robots) = blueprint.build(robot, resources, robots);
+                    (
+                        option,
+                        time_till_robot(goal_robot, &new_resources, &new_robots, blueprint),
+                        new_resources,
+                        new_robots,
+                    )
+                } else {
+                    (
+                        option,
+                        time_till_robot(goal_robot, resources, robots, blueprint),
+                        (*resources).clone(),
+                        *robots,
+                    )
+                }
+            })
+            .map(|x| {
+                println!( "building {:?} now will get us to {:?} in {} steps", x.0, goal_robot, x.1);
+                x
+            })
+            .collect::<Vec<(Option<Type>, usize, Resources, Robots)>>();
+        let min = all_options
+            .iter()
+            .min_by_key(|(_, time, _, _)| *time)
+            .unwrap()
+            .1;
+        all_options.into_iter().filter(|x| x.1 == min).collect()
     }
 }
 
+// Tried solving by setting intermediate goals.
 fn gradual_solve(
     step_limit: usize,
     resources: &Resources,
@@ -225,10 +312,64 @@ fn gradual_solve(
     blueprint: &Blueprint,
     f: &mut dyn FnMut(&Vec<Option<Type>>, &Resources),
 ) {
-    if robots[Clay] == 0 {
-        // build a clay robot asap.
-
+    let steps_remaining = step_limit - steps.len();
+    if steps_remaining == 0 {
+        //print_steps(steps);
+        f(&steps, resources);
+        return;
     }
+
+    let options = if robots[Clay] == 0 {
+        get_to_goal(Clay, resources, robots, blueprint)
+    } else if robots[Obs] == 0 {
+        get_to_goal(Obs, resources, robots, blueprint)
+    } else {
+        get_to_goal(Geo, resources, robots, blueprint)
+    };
+
+    for option in options.iter().take(1) {
+        println!("building {:?}", option.0);
+        steps.push(option.0);
+        let new_robots = option.3;
+        let new_resources = option.2.collect(robots);
+        gradual_solve(step_limit, &new_resources, &new_robots, steps, blueprint, f);
+        steps.pop();
+    }
+}
+
+fn gradual_solve_blueprint(blueprint: &Blueprint, step_limit: usize) -> usize {
+    let resources = Resources::new();
+    let robots = [1, 0, 0, 0];
+
+    let mut max = 0;
+    let mut count: usize = 0;
+    let mut f = &mut |steps: &Vec<Option<Type>>, r: &Resources| {
+        count += 1;
+        //let g = play_out(blueprint, steps);
+        if max < r.resources[Geo] {
+            max = r.resources[Geo];
+            println!("{}: count: {count}, new max: {max}", blueprint.index,);
+            print_steps(steps);
+        }
+    };
+
+    println!("searching through: {:?}", blueprint.limits);
+    gradual_solve(
+        step_limit,
+        &resources,
+        &robots,
+        &mut vec![],
+        blueprint,
+        &mut f,
+    );
+    println!("count: {} max: {}", count, max);
+    max
+}
+
+fn main() {
+    println!("part 1: {}", solve_part1("input.txt"));
+    //println!("part 2: {}", solve_part2("test.txt"));
+    //println!("part 2: {}", solve_part2("input.txt"));
 }
 
 fn step(
@@ -285,7 +426,8 @@ fn step(
         for robot in [Ore, Clay, Obs] {
             if can_build[robot] && robots[robot] < limits[robot] {
                 built_something = true;
-                (evening_resources, evening_robots) = blueprint.build(robot, &tomorrows_resources, robots);
+                (evening_resources, evening_robots) =
+                    blueprint.build(robot, &tomorrows_resources, robots);
 
                 steps.push(Some(robot));
                 step(
@@ -302,9 +444,9 @@ fn step(
                 steps.pop();
             }
         }
-        let should_holdout = blueprint.can_build(&resources.collect_n(robots, steps_remaining-1)) != can_build ;
+        let should_holdout =
+            blueprint.can_build(&resources.collect_n(robots, steps_remaining - 1)) != can_build;
         if !built_something || should_holdout {
-            //{
             steps.push(None);
             step(
                 step_limit,
@@ -368,10 +510,10 @@ fn solve_blueprint(blueprint: &Blueprint, step_limit: usize) -> usize {
     println!("searching through: {:?}", blueprint.limits);
     for a in 1..=blueprint.limits[0] {
         for b in 1..=blueprint.limits[1] {
-            if a+b > step_limit -3 {
+            if a + b > step_limit - 3 {
                 continue;
             }
-            for c in 1..=blueprint.limits[2].min(21-a-b) {
+            for c in 1..=blueprint.limits[2].min(21 - a - b) {
                 step(
                     step_limit,
                     &resources,
@@ -397,7 +539,7 @@ fn solve_part1(f: &str) -> usize {
         .filter(|l| l.len() > 0)
         //.skip(1)
         .map(|l| Blueprint::parse(l).unwrap())
-        .map(|blueprint| blueprint.index * solve_blueprint(&blueprint, 24))
+        .map(|blueprint| blueprint.index * gradual_solve_blueprint(&blueprint, 24))
         .sum()
 }
 
@@ -410,10 +552,4 @@ fn solve_part2(f: &str) -> usize {
         .map(|l| Blueprint::parse(l).unwrap())
         .map(|blueprint| solve_blueprint(&blueprint, 32))
         .product()
-}
-
-fn main() {
-    //println!("part 1: {}", solve_part1("input.txt"));
-    //println!("part 2: {}", solve_part2("test.txt"));
-    println!("part 2: {}", solve_part2("input.txt"));
 }
