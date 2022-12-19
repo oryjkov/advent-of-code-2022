@@ -41,6 +41,7 @@ mod test {
     #[test]
     fn test_part2() {
         assert_eq!(solve_part2("test.txt", 20), 56000011);
+        assert_eq!(solve_part2("input.txt", 4_000_000), 12051287042458);
     }
 }
 
