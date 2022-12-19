@@ -14,115 +14,14 @@ mod test {
     }
     #[test]
     fn test_part2() {
-        assert_eq!(solve_part2("test.txt"), 56*62);
+        assert_eq!(solve_part2("test.txt"), 56 * 62);
         assert_eq!(solve_part2("input.txt"), 15510);
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
-struct Resources {
-    resources: [usize; 4],
-}
-impl Resources {
-    fn new() -> Self {
-        Resources { resources: [0; 4] }
-    }
-    fn collect(&self, robots: &Robots) -> Self {
-        let mut rv = self.resources.clone();
-        for i in 0..4 {
-            rv[i] += robots[i];
-        }
-        Resources { resources: rv }
-    }
-    fn take(&self, cost: &[usize; 4]) -> Self {
-        let mut rv = self.resources.clone();
-        for i in 0..4 {
-            rv[i] -= cost[i];
-        }
-        Resources { resources: rv }
-    }
-}
-
-#[derive(Clone)]
-struct State {
-    resources: Resources,
-    robots: Robots,
-}
-
-struct Step {
-    state: State,
-    action: Option<Material>,
-}
-
-fn step(
-    step_limit: usize,
-    state: &State,
-    steps: &mut Vec<Step>,
-    blueprint: &Blueprint,
-    f: &mut dyn FnMut(&Vec<Step>),
-) {
-    let steps_remaining = step_limit - steps.len();
-    if steps_remaining == 0 {
-        steps.push(Step {
-            state: state.clone(),
-            action: None,
-        });
-        f(&steps);
-        steps.pop();
-        return;
-    }
-    if let Some(next_state) = blueprint.apply(Some(Geo), state) {
-        steps.push(Step {
-            state: state.clone(),
-            action: Some(Geo),
-        });
-        step(step_limit, &next_state, steps, blueprint, f);
-        steps.pop();
-    } else {
-        for robot in [Ore, Clay, Obs] {
-            let max_i_d_ever_need = steps_remaining * blueprint.limits[robot];
-            let max_i_can_have =
-                state.robots[robot] * steps_remaining + state.resources.resources[robot];
-            let i_should_bother = max_i_can_have < max_i_d_ever_need;
-            if !i_should_bother {
-                continue;
-            }
-            if state.robots[robot] < blueprint.limits[robot] {
-                if let Some(next_state) = blueprint.apply(Some(robot), state) {
-                    // Skip building a robot that we could have built during the last step.
-                    if steps.len() > 0
-                        && steps[steps.len() - 1].action.is_none()
-                        && blueprint.can_build(robot, &steps[steps.len() - 1].state.resources)
-                    {
-                        continue;
-                    }
-
-                    steps.push(Step {
-                        state: state.clone(),
-                        action: Some(robot),
-                    });
-                    step(step_limit, &next_state, steps, blueprint, f);
-                    steps.pop();
-                }
-            }
-        }
-
-        let next_state = &blueprint.apply(None, state).unwrap();
-        steps.push(Step {
-            state: state.clone(),
-            action: None,
-        });
-        step(step_limit, &next_state, steps, blueprint, f);
-        steps.pop();
-    }
-}
-
 type Robots = [usize; 4];
-struct Blueprint {
-    index: usize,
-    costs: [[usize; 4]; 4],
-    limits: [usize; 4],
-}
+type Resources = [usize; 4];
+type Cost = [usize; 4];
 
 impl<T> Index<Material> for [T; 4] {
     type Output = T;
@@ -135,6 +34,130 @@ impl<T> IndexMut<Material> for [T; 4] {
     fn index_mut(&mut self, r: Material) -> &mut T {
         &mut self[r as usize]
     }
+}
+
+#[derive(Clone)]
+struct State {
+    resources: Resources,
+    robots: Robots,
+}
+impl State {
+    fn collect(resources: &Resources, robots: &Robots) -> Resources {
+        let mut rv = resources.clone();
+        for i in 0..4 {
+            rv[i] += robots[i];
+        }
+        rv
+    }
+    fn take(resources: &Resources, cost: &[usize; 4]) -> Resources {
+        let mut rv = resources.clone();
+        for i in 0..4 {
+            rv[i] -= cost[i];
+        }
+        rv
+    }
+    fn add_robot(robots: &Robots, robot: Material) -> Robots {
+        let mut rv = robots.clone();
+        rv[robot] += 1;
+        rv
+    }
+
+    fn build(&self, maybe_robot: Option<Material>, blueprint: &Blueprint) -> Option<State> {
+        match maybe_robot {
+            None => Some(State {
+                resources: Self::collect(&self.resources, &self.robots),
+                robots: self.robots,
+            }),
+            Some(robot) => {
+                if !blueprint.can_build(robot, &self.resources) {
+                    return None;
+                }
+                Some(State {
+                    resources: Self::collect(
+                        &Self::take(&self.resources, &blueprint.costs[robot]),
+                        &self.robots,
+                    ),
+                    robots: Self::add_robot(&self.robots, robot),
+                })
+            }
+        }
+    }
+}
+
+// State in the search tree.
+struct Step {
+    state: State,
+    action: Option<Material>,
+}
+
+fn step(
+    step_limit: usize,
+    state: &State,
+    steps: &mut Vec<Step>,
+    blueprint: &Blueprint,
+    report_fn: &mut dyn FnMut(&Vec<Step>),
+) {
+    let steps_remaining = step_limit - steps.len();
+    if steps_remaining == 0 {
+        // Push the state at the end of _this_ step
+        steps.push(Step {
+            state: state.clone(),
+            action: None,
+        });
+        report_fn(&steps);
+        steps.pop();
+        return;
+    }
+    if let Some(next_state) = state.build(Some(Geo), &blueprint) {
+        steps.push(Step {
+            state: state.clone(),
+            action: Some(Geo),
+        });
+        step(step_limit, &next_state, steps, blueprint, report_fn);
+        steps.pop();
+    } else {
+        for robot in [Ore, Clay, Obs] {
+            let max_i_d_ever_need = steps_remaining * blueprint.limits[robot];
+            let max_i_can_have = state.robots[robot] * steps_remaining + state.resources[robot];
+            let i_should_bother = max_i_can_have < max_i_d_ever_need;
+            if !i_should_bother {
+                continue;
+            }
+            if state.robots[robot] < blueprint.limits[robot] {
+                if let Some(next_state) = state.build(Some(robot), &blueprint) {
+                    // Skip building a robot that we could have built during the last step.
+                    if steps.len() > 0
+                        && steps[steps.len() - 1].action.is_none()
+                        && blueprint.can_build(robot, &steps[steps.len() - 1].state.resources)
+                    {
+                        continue;
+                    }
+
+                    steps.push(Step {
+                        state: state.clone(),
+                        action: Some(robot),
+                    });
+                    step(step_limit, &next_state, steps, blueprint, report_fn);
+                    steps.pop();
+                }
+            }
+        }
+
+        let next_state = &state.build(None, &blueprint).unwrap();
+        steps.push(Step {
+            state: state.clone(),
+            action: None,
+        });
+        step(step_limit, &next_state, steps, blueprint, report_fn);
+        steps.pop();
+    }
+}
+
+struct Blueprint {
+    index: usize,
+    costs: [Cost; 4],
+    // Highest value for any robot (max consumption of its resource).
+    limits: [usize; 4],
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -181,37 +204,11 @@ impl Blueprint {
     }
     fn can_build(&self, robot: Material, resources: &Resources) -> bool {
         for i in 0..4 {
-            if resources.resources[i] < self.costs[robot][i] {
+            if resources[i] < self.costs[robot][i] {
                 return false;
             }
         }
         true
-    }
-    fn try_build(&self, robot: Material, state: &State) -> Option<State> {
-        if !self.can_build(robot, &state.resources) {
-            return None;
-        }
-        let mut rn = state.robots.clone();
-        rn[robot] += 1;
-        Some(State {
-            resources: state.resources.take(&self.costs[robot]),
-            robots: rn,
-        })
-    }
-    fn apply(&self, maybe_robot: Option<Material>, state: &State) -> Option<State> {
-        match maybe_robot {
-            None => Some(State {
-                resources: state.resources.collect(&state.robots),
-                robots: state.robots.clone(),
-            }),
-            Some(robot) => {
-                let next_state = self.try_build(robot, state)?;
-                Some(State {
-                    resources: next_state.resources.collect(&state.robots),
-                    robots: next_state.robots,
-                })
-            }
-        }
     }
 }
 
@@ -228,22 +225,22 @@ fn print_steps(steps: &Vec<Step>) {
 
 fn solve_blueprint(blueprint: &Blueprint, step_limit: usize) -> usize {
     let state = State {
-        resources: Resources::new(),
+        resources: [0; 4],
         robots: [1, 0, 0, 0],
     };
 
     let mut max = 0;
     let mut count: usize = 0;
-    let mut f = &mut |s: &Vec<Step>| {
+    let mut report_fn = &mut |s: &Vec<Step>| {
         count += 1;
-        let r = s[s.len() - 1].state.resources.resources[Geo];
+        let r = s[s.len() - 1].state.resources[Geo];
         if max < r {
             max = r;
             println!("{}: count: {count}, new max: {max}", blueprint.index,);
             print_steps(s);
         }
     };
-    step(step_limit, &state, &mut vec![], blueprint, &mut f);
+    step(step_limit, &state, &mut vec![], blueprint, &mut report_fn);
     println!("count: {} max: {}", count, max);
     max
 }
