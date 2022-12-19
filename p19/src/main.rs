@@ -215,8 +215,6 @@ fn step(
     steps: &mut Vec<Option<Type>>,
     blueprint: &Blueprint,
     limits: [usize; 4],
-    hold_out_limit: usize,
-    hold_out: usize,
     f: &mut dyn FnMut(&Vec<Option<Type>>, &Resources),
 ) {
     /*
@@ -251,8 +249,6 @@ fn step(
             steps,
             blueprint,
             limits,
-            hold_out_limit,
-            hold_out_limit,
             f,
         );
         steps.pop();
@@ -260,7 +256,10 @@ fn step(
         let mut built_something = false;
         let tomorrows_resources = resources.collect(&working_robots);
         for robot in [Ore, Clay, Obs] {
-            if can_build[robot] && robots[robot] < limits[robot] {
+            let max_i_d_ever_need = steps_remaining * limits[robot];
+            let max_i_can_have = robots[robot] * steps_remaining + resources.resources[robot];
+            let i_should_bother = max_i_can_have < max_i_d_ever_need;
+            if can_build[robot] && robots[robot] < limits[robot] && i_should_bother {
                 built_something = true;
                 (evening_resources, evening_robots) =
                     blueprint.build(robot, &tomorrows_resources, robots);
@@ -273,8 +272,6 @@ fn step(
                     steps,
                     blueprint,
                     limits,
-                    hold_out_limit,
-                    hold_out_limit,
                     f,
                 );
                 steps.pop();
@@ -291,8 +288,6 @@ fn step(
                 steps,
                 blueprint,
                 limits,
-                hold_out_limit,
-                hold_out,
                 f,
             );
             steps.pop();
@@ -349,8 +344,6 @@ fn solve_blueprint(blueprint: &Blueprint, step_limit: usize) -> usize {
         &mut vec![],
         blueprint,
         blueprint.limits,
-        1,
-        1,
         &mut f,
     );
     println!("count: {} max: {}", count, max);
@@ -380,8 +373,9 @@ fn solve_part2(f: &str) -> usize {
 }
 
 fn main() {
-    println!("part 1: {}", solve_part1("input.txt"));
+    //println!("part 1: {}", solve_part1("test.txt"));
+    //println!("part 1: {}", solve_part1("input.txt"));
     //println!("part 2: {}", solve_part2("test.txt"));
-    //println!("part 2: {}", solve_part2("input.txt"));
+    println!("part 2: {}", solve_part2("input.txt"));
 }
 
