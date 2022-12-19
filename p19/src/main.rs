@@ -8,87 +8,15 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_play_out() {
-        let blueprint = Blueprint::parse("Blueprint 1: Each ore robot costs 4 ore. Each clay robot costs 2 ore. Each obsidian robot costs 3 ore and 14 clay. Each geode robot costs 2 ore and 7 obsidian.").unwrap();
-        assert_eq!(
-            play_out(&blueprint, &vec![]),
-            Resources {
-                resources: [0, 0, 0, 0]
-            }
-        );
-        assert_eq!(
-            play_out(&blueprint, &vec![None]),
-            Resources {
-                resources: [1, 0, 0, 0]
-            }
-        );
-        assert_eq!(
-            play_out(&blueprint, &vec![None, None]),
-            Resources {
-                resources: [2, 0, 0, 0]
-            }
-        );
-        assert_eq!(
-            play_out(&blueprint, &vec![None, None, Some(Clay)]),
-            Resources {
-                resources: [1, 0, 0, 0]
-            }
-        );
-        assert_eq!(
-            play_out(&blueprint, &vec![None, None, Some(Clay), None]),
-            Resources {
-                resources: [2, 1, 0, 0]
-            }
-        );
-        assert_eq!(
-            play_out(&blueprint, &vec![None, None, Some(Clay), None, Some(Clay)]),
-            Resources {
-                resources: [1, 2, 0, 0]
-            }
-        );
-        assert_eq!(
-            play_out(
-                &blueprint,
-                &vec![
-                    None,
-                    None,
-                    Some(Clay),
-                    None,
-                    Some(Clay),
-                    None,
-                    Some(Clay),
-                    None,
-                    None,
-                    None,
-                    Some(Obs),
-                    Some(Clay),
-                    None,
-                    None,
-                    Some(Obs),
-                    None,
-                    None,
-                    Some(Geo),
-                    None,
-                    None,
-                    Some(Geo),
-                    None,
-                    None,
-                    None,
-                ]
-            ),
-            Resources {
-                resources: [6, 41, 8, 9] // 17: resources: [3, 13, 8, 0]
-            }
-        );
-    }
-
-    #[test]
     fn test_part1() {
         assert_eq!(solve_part1("test.txt"), 33);
-        //assert_eq!(solve_part1("test.txt"), 1725);
+        assert_eq!(solve_part1("input.txt"), 1725);
     }
     #[test]
-    fn test_part2() {}
+    fn test_part2() {
+        assert_eq!(solve_part2("test.txt"), 56*62);
+        assert_eq!(solve_part2("input.txt"), 15510);
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -106,27 +34,86 @@ impl Resources {
         }
         Resources { resources: rv }
     }
-    fn collect_n(&self, robots: &Robots, n: usize) -> Self {
-        let mut rv = self.resources.clone();
-        for i in 0..4 {
-            rv[i] += robots[i] * n;
-        }
-        Resources { resources: rv }
-    }
-    fn enough(&self, cost: &[usize; 4]) -> bool {
-        for i in 0..4 {
-            if cost[i] > self.resources[i] {
-                return false;
-            }
-        }
-        return true;
-    }
     fn take(&self, cost: &[usize; 4]) -> Self {
         let mut rv = self.resources.clone();
         for i in 0..4 {
             rv[i] -= cost[i];
         }
         Resources { resources: rv }
+    }
+}
+
+#[derive(Clone)]
+struct State {
+    resources: Resources,
+    robots: Robots,
+}
+
+struct Step {
+    state: State,
+    action: Option<Material>,
+}
+
+fn step(
+    step_limit: usize,
+    state: &State,
+    steps: &mut Vec<Step>,
+    blueprint: &Blueprint,
+    f: &mut dyn FnMut(&Vec<Step>),
+) {
+    let steps_remaining = step_limit - steps.len();
+    if steps_remaining == 0 {
+        steps.push(Step {
+            state: state.clone(),
+            action: None,
+        });
+        f(&steps);
+        steps.pop();
+        return;
+    }
+    if let Some(next_state) = blueprint.apply(Some(Geo), state) {
+        steps.push(Step {
+            state: state.clone(),
+            action: Some(Geo),
+        });
+        step(step_limit, &next_state, steps, blueprint, f);
+        steps.pop();
+    } else {
+        for robot in [Ore, Clay, Obs] {
+            let max_i_d_ever_need = steps_remaining * blueprint.limits[robot];
+            let max_i_can_have =
+                state.robots[robot] * steps_remaining + state.resources.resources[robot];
+            let i_should_bother = max_i_can_have < max_i_d_ever_need;
+            if !i_should_bother {
+                continue;
+            }
+            if state.robots[robot] < blueprint.limits[robot] {
+                if let Some(next_state) = blueprint.apply(Some(robot), state) {
+                    // Skip building a robot that we could have built during the last step.
+                    if steps.len() > 0
+                        && steps[steps.len() - 1].action.is_none()
+                        && blueprint.can_build(robot, &steps[steps.len() - 1].state.resources)
+                    {
+                        continue;
+                    }
+
+                    steps.push(Step {
+                        state: state.clone(),
+                        action: Some(robot),
+                    });
+                    step(step_limit, &next_state, steps, blueprint, f);
+                    steps.pop();
+                }
+            }
+        }
+
+        let next_state = &blueprint.apply(None, state).unwrap();
+        steps.push(Step {
+            state: state.clone(),
+            action: None,
+        });
+        step(step_limit, &next_state, steps, blueprint, f);
+        steps.pop();
     }
 }
 
@@ -137,27 +124,27 @@ struct Blueprint {
     limits: [usize; 4],
 }
 
-impl<T> Index<Type> for [T; 4] {
+impl<T> Index<Material> for [T; 4] {
     type Output = T;
-    fn index(&self, r: Type) -> &T {
+    fn index(&self, r: Material) -> &T {
         &self[r as usize]
     }
 }
 
-impl<T> IndexMut<Type> for [T; 4] {
-    fn index_mut(&mut self, r: Type) -> &mut T {
+impl<T> IndexMut<Material> for [T; 4] {
+    fn index_mut(&mut self, r: Material) -> &mut T {
         &mut self[r as usize]
     }
 }
 
 #[derive(Copy, Clone, Debug)]
-enum Type {
+enum Material {
     Ore = 0,
     Clay = 1,
     Obs = 2,
     Geo = 3,
 }
-use Type::*;
+use Material::*;
 
 impl Blueprint {
     fn parse(s: &str) -> Option<Self> {
@@ -192,129 +179,46 @@ impl Blueprint {
             limits,
         })
     }
-    fn can_build(&self, resources: &Resources) -> [bool; 4] {
-        let mut rv = [false; 4];
-        for r in [Ore, Clay, Obs, Geo] {
-            if resources.enough(&self.costs[r]) {
-                rv[r] = true;
+    fn can_build(&self, robot: Material, resources: &Resources) -> bool {
+        for i in 0..4 {
+            if resources.resources[i] < self.costs[robot][i] {
+                return false;
             }
         }
-        rv
+        true
     }
-    fn build(&self, robot: Type, resources: &Resources, robots: &Robots) -> (Resources, Robots) {
-        let mut rn = robots.clone();
+    fn try_build(&self, robot: Material, state: &State) -> Option<State> {
+        if !self.can_build(robot, &state.resources) {
+            return None;
+        }
+        let mut rn = state.robots.clone();
         rn[robot] += 1;
-        (resources.take(&self.costs[robot]), rn)
+        Some(State {
+            resources: state.resources.take(&self.costs[robot]),
+            robots: rn,
+        })
     }
-}
-
-fn step(
-    step_limit: usize,
-    resources: &Resources,
-    robots: &Robots,
-    steps: &mut Vec<Option<Type>>,
-    blueprint: &Blueprint,
-    limits: [usize; 4],
-    f: &mut dyn FnMut(&Vec<Option<Type>>, &Resources),
-) {
-    /*
-    if &play_out(blueprint, steps) != resources {
-        print_steps(steps);
-        //println!("robots: {:?}", robots);
-        panic!(
-            "have: {:?}, want: {:?}",
-            resources,
-            play_out(blueprint, steps)
-        );
-    }
-     */
-    let steps_remaining = step_limit - steps.len();
-    if steps_remaining == 0 {
-        f(&steps, resources);
-        return;
-    }
-    let working_robots = robots.clone();
-    let can_build = blueprint.can_build(resources);
-
-    let mut evening_resources;
-    let mut evening_robots;
-    if can_build[Geo] {
-        (evening_resources, evening_robots) = blueprint.build(Geo, &resources, robots);
-
-        steps.push(Some(Geo));
-        step(
-            step_limit,
-            &evening_resources.collect(&working_robots),
-            &evening_robots,
-            steps,
-            blueprint,
-            limits,
-            f,
-        );
-        steps.pop();
-    } else {
-        let mut built_something = false;
-        let tomorrows_resources = resources.collect(&working_robots);
-        for robot in [Ore, Clay, Obs] {
-            let max_i_d_ever_need = steps_remaining * limits[robot];
-            let max_i_can_have = robots[robot] * steps_remaining + resources.resources[robot];
-            let i_should_bother = max_i_can_have < max_i_d_ever_need;
-            if can_build[robot] && robots[robot] < limits[robot] && i_should_bother {
-                built_something = true;
-                (evening_resources, evening_robots) =
-                    blueprint.build(robot, &tomorrows_resources, robots);
-
-                steps.push(Some(robot));
-                step(
-                    step_limit,
-                    &evening_resources,
-                    &evening_robots,
-                    steps,
-                    blueprint,
-                    limits,
-                    f,
-                );
-                steps.pop();
+    fn apply(&self, maybe_robot: Option<Material>, state: &State) -> Option<State> {
+        match maybe_robot {
+            None => Some(State {
+                resources: state.resources.collect(&state.robots),
+                robots: state.robots.clone(),
+            }),
+            Some(robot) => {
+                let next_state = self.try_build(robot, state)?;
+                Some(State {
+                    resources: next_state.resources.collect(&state.robots),
+                    robots: next_state.robots,
+                })
             }
         }
-        let should_holdout =
-            blueprint.can_build(&resources.collect_n(robots, steps_remaining - 1)) != can_build;
-        if !built_something || should_holdout {
-            steps.push(None);
-            step(
-                step_limit,
-                &tomorrows_resources,
-                &robots,
-                steps,
-                blueprint,
-                limits,
-                f,
-            );
-            steps.pop();
-        }
     }
 }
 
-// Returs the resources available at the end of going through steps.
-fn play_out(blueprint: &Blueprint, steps: &Vec<Option<Type>>) -> Resources {
-    let mut resources = Resources::new();
-    let mut robots = [1, 0, 0, 0];
-    for step in steps {
-        let working_robots = robots.clone();
-        (resources, robots) = if let Some(robot) = step {
-            blueprint.build(*robot, &resources, &robots)
-        } else {
-            (resources, robots)
-        };
-        resources = resources.collect(&working_robots);
-    }
-    resources
-}
-
-fn print_steps(steps: &Vec<Option<Type>>) {
+fn print_steps(steps: &Vec<Step>) {
     for s in steps {
-        if s.is_some() {
-            print!("{:?} ", s.unwrap());
+        if s.action.is_some() {
+            print!("{:?} ", s.action.unwrap());
         } else {
             print!("None ");
         }
@@ -323,29 +227,23 @@ fn print_steps(steps: &Vec<Option<Type>>) {
 }
 
 fn solve_blueprint(blueprint: &Blueprint, step_limit: usize) -> usize {
-    let resources = Resources::new();
-    let robots = [1, 0, 0, 0];
+    let state = State {
+        resources: Resources::new(),
+        robots: [1, 0, 0, 0],
+    };
 
     let mut max = 0;
     let mut count: usize = 0;
-    let mut f = &mut |steps: &Vec<Option<Type>>, r: &Resources| {
+    let mut f = &mut |s: &Vec<Step>| {
         count += 1;
-        //let g = play_out(blueprint, steps);
-        if max < r.resources[Geo] {
-            max = r.resources[Geo];
+        let r = s[s.len() - 1].state.resources.resources[Geo];
+        if max < r {
+            max = r;
             println!("{}: count: {count}, new max: {max}", blueprint.index,);
-            //print_steps(steps);
+            print_steps(s);
         }
     };
-    step(
-        step_limit,
-        &resources,
-        &robots,
-        &mut vec![],
-        blueprint,
-        blueprint.limits,
-        &mut f,
-    );
+    step(step_limit, &state, &mut vec![], blueprint, &mut f);
     println!("count: {} max: {}", count, max);
     max
 }
@@ -374,8 +272,7 @@ fn solve_part2(f: &str) -> usize {
 
 fn main() {
     //println!("part 1: {}", solve_part1("test.txt"));
-    //println!("part 1: {}", solve_part1("input.txt"));
+    println!("part 1: {}", solve_part1("input.txt"));
     //println!("part 2: {}", solve_part2("test.txt"));
     println!("part 2: {}", solve_part2("input.txt"));
 }
-
