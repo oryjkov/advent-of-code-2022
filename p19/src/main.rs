@@ -208,6 +208,29 @@ impl Blueprint {
     }
 }
 
+// upper bound on how long will it take to build a robot given the resources and robots now.
+// assume no more building will happen.
+fn time_till_robot(robot: Type, resources: &Resources, robots: &Robots, blueprint: &Blueprint) {
+    let cost = blueprint.costs[robot];
+    for resource in [Ore, Clay, Obs, Geo] {
+        let time = cost[resource] - resources.resources[resource] / 1;
+    }
+}
+
+fn gradual_solve(
+    step_limit: usize,
+    resources: &Resources,
+    robots: &Robots,
+    steps: &mut Vec<Option<Type>>,
+    blueprint: &Blueprint,
+    f: &mut dyn FnMut(&Vec<Option<Type>>, &Resources),
+) {
+    if robots[Clay] == 0 {
+        // build a clay robot asap.
+
+    }
+}
+
 fn step(
     step_limit: usize,
     resources: &Resources,
@@ -391,5 +414,6 @@ fn solve_part2(f: &str) -> usize {
 
 fn main() {
     //println!("part 1: {}", solve_part1("input.txt"));
-    println!("part 2: {}", solve_part2("test.txt"));
+    //println!("part 2: {}", solve_part2("test.txt"));
+    println!("part 2: {}", solve_part2("input.txt"));
 }
