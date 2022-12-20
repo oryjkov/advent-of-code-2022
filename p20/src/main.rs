@@ -171,6 +171,22 @@ fn shift(x: &Rc<RefCell<ListElement>>) {
         return;
     }
     let n = x.borrow().elem.abs();
+
+    let a = x.borrow().left.as_ref().unwrap().clone();
+    let b = x.borrow().right.as_ref().unwrap().clone();
+    if x.borrow().id == a.borrow().id {
+        // single element list
+        return;
+    }
+    assert_ne!(x.borrow().id, b.borrow().id);
+    assert_ne!(a.borrow().id, b.borrow().id);
+
+    // Remove x and cycle around.
+    // A->X becomes A->B
+    a.borrow_mut().right = Some(b.clone());
+    // B->X becomes B->A
+    b.borrow_mut().left = Some(a.clone());
+
     let mut cur = x.clone();
     for _ in 0..n {
         cur = if dir > 0 {
@@ -184,8 +200,6 @@ fn shift(x: &Rc<RefCell<ListElement>>) {
         }
     }
 
-    let a = x.borrow().left.as_ref().unwrap().clone();
-    let b = x.borrow().right.as_ref().unwrap().clone();
     let (cur, c) = if x.borrow().elem > 0 {
         (cur.clone(), cur.borrow().right.as_ref().unwrap().clone())
     } else {
@@ -209,27 +223,19 @@ fn shift(x: &Rc<RefCell<ListElement>>) {
     );
      */
 
-    if x.borrow().id == a.borrow().id {
-        // single element list
-        return;
-    }
-    assert_ne!(x.borrow().id, b.borrow().id);
-    assert_ne!(a.borrow().id, b.borrow().id);
-
     assert_ne!(cur.borrow().id, c.borrow().id);
     if x.borrow().id == cur.borrow().id {
+        a.borrow_mut().right = Some(x.clone());
+        b.borrow_mut().left = Some(x.clone());
         // x and cur are the same
         return;
     }
     if x.borrow().id == c.borrow().id {
+        a.borrow_mut().right = Some(x.clone());
+        b.borrow_mut().left = Some(x.clone());
         // x and c are the same
         return;
     }
-
-    // A->X becomes A->B
-    a.borrow_mut().right = Some(b.clone());
-    // B->X becomes B->A
-    b.borrow_mut().left = Some(a.clone());
 
     // Cur->C becomes Cur->X
     cur.borrow_mut().right = Some(x.clone());
