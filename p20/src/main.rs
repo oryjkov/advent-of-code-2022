@@ -149,72 +149,42 @@ fn print_list(x: &Rc<RefCell<ListElement>>) {
 }
 
 fn shift(x: &Rc<RefCell<ListElement>>) {
-    let dir = x.borrow_mut().elem.signum();
-    if dir == 0 {
+    if x.borrow().elem == 0 {
         return;
     }
     if x.borrow().len == 1 {
         return;
     }
-    let mut p = x.borrow().elem.abs();
-    while p < 0 {
-        p += x.borrow().len as i64 - 1;
+    // modulo len-1 since that's what works.
+    let len = x.borrow().len - 1;
+    let n = x.borrow().elem.rem_euclid(x.borrow().len as i64 - 1);
+    if n == 0 {
+        return;
     }
-
-    let n = (p % (x.borrow().len as i64 - 1)) as usize;
 
     let a = x.borrow().left.as_ref().unwrap().clone();
     let b = x.borrow().right.as_ref().unwrap().clone();
-    if x.borrow().id == a.borrow().id {
-        // single element list
-        return;
-    }
+
+    // Already checked for a single element list.
+    assert_ne!(x.borrow().id ,a.borrow().id);
     assert_ne!(x.borrow().id, b.borrow().id);
     assert_ne!(a.borrow().id, b.borrow().id);
 
-    // Remove x then cycle around.
+    let mut cur = x.clone();
+    for _ in 0..n {
+        cur = next_right(&cur);
+    }
+    let c = cur.borrow().right.as_ref().unwrap().clone();
+
     // A->X becomes A->B
     a.borrow_mut().right = Some(b.clone());
     // B->X becomes B->A
     b.borrow_mut().left = Some(a.clone());
 
-    let mut cur = x.clone();
-    for _ in 0..n {
-        cur = if dir > 0 {
-            // right move
-            let y = cur.borrow().right.as_ref().unwrap().clone();
-            y
-        } else {
-            // left move
-            let y = cur.borrow().left.as_ref().unwrap().clone();
-            y
-        }
-    }
-
-    let (cur, c) = if x.borrow().elem > 0 {
-        (cur.clone(), cur.borrow().right.as_ref().unwrap().clone())
-    } else {
-        (cur.borrow().left.as_ref().unwrap().clone(), cur.clone())
-    };
     // A->X->B->...->Cur->C becomes A->B->...->Cur->X->C
-    /*
-    println!(
-        "inserting {} between {} and {}",
-        x.borrow().elem,
-        cur.borrow().elem,
-        c.borrow().elem
-    );
-    println!(
-        "...-> {} -> {} -> {} ->...-> {} -> {} ->... becomes ",
-        a.borrow().elem,
-        x.borrow().elem,
-        b.borrow().elem,
-        cur.borrow().elem,
-        c.borrow().elem
-    );
-     */
-
     assert_ne!(cur.borrow().id, c.borrow().id);
+    assert_ne!(x.borrow().id, cur.borrow().id);
+    assert_ne!(x.borrow().id, c.borrow().id);
     if x.borrow().id == cur.borrow().id {
         a.borrow_mut().right = Some(x.clone());
         b.borrow_mut().left = Some(x.clone());
@@ -236,17 +206,6 @@ fn shift(x: &Rc<RefCell<ListElement>>) {
     x.borrow_mut().left = Some(cur.clone());
     // C->Cur becomes C->X
     c.borrow_mut().left = Some(x.clone());
-
-    /*
-    println!(
-        "...-> {} -> {} ->...-> {} -> {} -> {} ->...",
-        a.borrow().elem,
-        b.borrow().elem,
-        cur.borrow().elem,
-        x.borrow().elem,
-        c.borrow().elem
-    );
-     */
 }
 
 fn from_slice(l: &[i64]) -> Rc<RefCell<ListElement>> {
