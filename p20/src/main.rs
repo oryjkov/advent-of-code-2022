@@ -9,11 +9,11 @@ mod test {
         let test_cases = [
             (vec![1], vec![vec![1]]),
             //vec![vec![0], vec![0], vec![0]),
-            (vec![3, 1, 2], vec![vec![3, 1, 2]]),
             (vec![2, 1, 0], vec![vec![2, 1, 0]]),
             (vec![-2, 1, 0], vec![vec![-2, 1, 0]]),
-            (vec![0, -3, 5], vec![vec![0, -3, 5], vec![0,-3,5]]),
-            //(vec![0, -3, 5], vec![vec![0, -3, 5], vec![5,-3,0]]),
+            // wrong - -3 needs to be take out, next line is what's expected:
+            // (vec![0, -3, 5], vec![vec![0, -3, 5], vec![0,-3,5]]),
+            (vec![0, -3, 5], vec![vec![0, -3, 5], vec![5,-3,0]]),
             (
                 vec![0, 1, 2],
                 vec![vec![0, 1, 2], vec![0, 2, 1], vec![0, 2, 1]],
@@ -78,6 +78,7 @@ mod test {
     #[test]
     fn test_part1() {
         assert_eq!(solve_part1("test.txt"), 3);
+        assert_eq!(solve_part1("input.txt"), 13522);
     }
     #[test]
     fn test_part2() {
@@ -181,7 +182,7 @@ fn shift(x: &Rc<RefCell<ListElement>>) {
     assert_ne!(x.borrow().id, b.borrow().id);
     assert_ne!(a.borrow().id, b.borrow().id);
 
-    // Remove x and cycle around.
+    // Remove x then cycle around.
     // A->X becomes A->B
     a.borrow_mut().right = Some(b.clone());
     // B->X becomes B->A
@@ -295,33 +296,6 @@ fn insert_right(elem: &Rc<RefCell<ListElement>>, n: i32, id: usize) -> Rc<RefCel
     b.borrow_mut().left = Some(x.clone());
 
     x
-}
-
-fn move_n(orig_list: &[i32], n: usize) -> Vec<i32> {
-    let mut l = orig_list
-        .iter()
-        .enumerate()
-        .map(|(a, b)| (a, *b))
-        .collect::<Vec<(usize, i32)>>();
-    //l.iter().for_each(|(pos, num)| print!("{}, ", num)); println!(); println!();
-    for index in 0..n {
-        let curr_pos = l.iter().position(|(p, _)| *p == index).unwrap();
-        let (orig_pos, num) = l[curr_pos];
-
-        let new_pos = (((curr_pos + l.len() - 1) as i32 + num) as usize) % (l.len() - 1);
-        //println!( "{} moves between {} and {}, from {} to {}", num, l[(new_pos + l.len()) % l.len()].1, l[(new_pos + l.len() + 1) % l.len()].1, curr_pos, new_pos);
-        if new_pos == 0 {
-            // That's how the test example wanted it (otherwise the element goes to the front of the list).
-            l.remove(curr_pos);
-            l.push((curr_pos, num));
-        } else {
-            l.remove(curr_pos);
-            l.insert(new_pos, (curr_pos, num));
-        }
-
-        //l.iter().for_each(|(pos, num)| print!("{}, ", num)); println!(); println!();
-    }
-    l.iter().map(|(_, n)| *n).collect()
 }
 
 fn read_input(f: &str) -> Vec<i32> {
