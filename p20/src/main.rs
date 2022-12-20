@@ -13,7 +13,7 @@ mod test {
             (vec![-2, 1, 0], vec![vec![-2, 1, 0]]),
             // wrong - -3 needs to be take out, next line is what's expected:
             // (vec![0, -3, 5], vec![vec![0, -3, 5], vec![0,-3,5]]),
-            (vec![0, -3, 5], vec![vec![0, -3, 5], vec![5,-3,0]]),
+            (vec![0, -3, 5], vec![vec![0, -3, 5], vec![5, -3, 0]]),
             (
                 vec![0, 1, 2],
                 vec![vec![0, 1, 2], vec![0, 2, 1], vec![0, 2, 1]],
@@ -32,7 +32,7 @@ mod test {
                 ],
             ),
         ];
-        fn check(l1: &[i32], l2: &[i32]) -> bool {
+        fn check(l1: &[i64], l2: &[i64]) -> bool {
             if l1.len() != l2.len() {
                 return false;
             }
@@ -49,7 +49,7 @@ mod test {
         for tc in test_cases {
             let s = &tc.0;
             for i in 0..tc.1.len() {
-                let got = move_by_list(s, i+1);
+                let got = mix_partial(s, i + 1);
                 let expected = &tc.1[i];
                 println!("{:?}", got);
                 if !check(&got, &expected) {
@@ -65,28 +65,30 @@ mod test {
         }
     }
     #[test]
-    fn test_move_n() {
-        let l = read_input("test.txt");
-        assert_eq!(move_n(&l, 1), [2, 1, -3, 3, -2, 0, 4]);
-        assert_eq!(move_n(&l, 2), [1, -3, 2, 3, -2, 0, 4]);
-        assert_eq!(move_n(&l, 3), [1, 2, 3, -2, -3, 0, 4]);
-        assert_eq!(move_n(&l, 4), [1, 2, -2, -3, 0, 3, 4]);
-        assert_eq!(move_n(&l, 5), [1, 2, -3, 0, 3, 4, -2]);
-        assert_eq!(move_n(&l, 6), [1, 2, -3, 0, 3, 4, -2]);
-        assert_eq!(move_n(&l, 7), [1, 2, -3, 4, 0, 3, -2]);
-    }
-    #[test]
     fn test_part1() {
         assert_eq!(solve_part1("test.txt"), 3);
         assert_eq!(solve_part1("input.txt"), 13522);
     }
     #[test]
     fn test_part2() {
-        //assert_eq!(solve_part1("test.txt"), -1);
+        assert_eq!(solve_part2("test.txt"), 1623178306);
+        assert_eq!(solve_part2("input.txt"), 17113168880158);
     }
 }
+fn mix_n(s: &[i64], num: usize) -> Vec<i64> {
+    let l = from_slice(&s);
+    let orig = as_ordered_vec(&l);
+    for _ in 0..num {
+        for i in 0..s.len() {
+            shift(&orig[i].1);
+        }
+    }
+    let fin = as_vec(&l);
+    assert_eq!(s.len(), fin.len());
+    return fin;
+}
 
-fn move_by_list(s: &[i32], n: usize) -> Vec<i32> {
+fn mix_partial(s: &[i64], n: usize) -> Vec<i64> {
     let l = from_slice(&s);
     let orig = as_ordered_vec(&l);
     for i in 0..n {
@@ -95,32 +97,12 @@ fn move_by_list(s: &[i32], n: usize) -> Vec<i32> {
     let fin = as_vec(&l);
     assert_eq!(s.len(), fin.len());
     return fin;
-    let zero_position = s.iter().position(|x| *x == 0).unwrap();
-    let mut sum = 0;
-    let mut zero = orig[zero_position].1.clone();
-
-    for _ in 0..3 {
-        for _ in 0..1000 {
-            zero = next_right(&zero);
-        }
-        println!("+1000 = {}", zero.borrow().elem);
-        sum += zero.borrow().elem;
-    }
-
-    println!(
-        "sum: {} zero position was {} with {} {}, now it has {}",
-        sum,
-        zero_position,
-        orig[zero_position].0,
-        orig[zero_position].1.borrow().elem,
-        fin[zero_position]
-    );
-    fin
 }
 
 struct ListElement {
-    elem: i32,
+    elem: i64,
     id: usize,
+    len: usize,
     left: Option<Rc<RefCell<ListElement>>>,
     right: Option<Rc<RefCell<ListElement>>>,
 }
@@ -144,7 +126,7 @@ fn as_ordered_vec(x: &Rc<RefCell<ListElement>>) -> Vec<(usize, Rc<RefCell<ListEl
     }
     rv
 }
-fn as_vec(x: &Rc<RefCell<ListElement>>) -> Vec<i32> {
+fn as_vec(x: &Rc<RefCell<ListElement>>) -> Vec<i64> {
     let mut rv = vec![];
     let mut cur = x.clone();
     loop {
@@ -171,7 +153,15 @@ fn shift(x: &Rc<RefCell<ListElement>>) {
     if dir == 0 {
         return;
     }
-    let n = x.borrow().elem.abs();
+    if x.borrow().len == 1 {
+        return;
+    }
+    let mut p = x.borrow().elem.abs();
+    while p < 0 {
+        p += x.borrow().len as i64 - 1;
+    }
+
+    let n = (p % (x.borrow().len as i64 - 1)) as usize;
 
     let a = x.borrow().left.as_ref().unwrap().clone();
     let b = x.borrow().right.as_ref().unwrap().clone();
@@ -259,10 +249,11 @@ fn shift(x: &Rc<RefCell<ListElement>>) {
      */
 }
 
-fn from_slice(l: &[i32]) -> Rc<RefCell<ListElement>> {
+fn from_slice(l: &[i64]) -> Rc<RefCell<ListElement>> {
     let mut first_element = Rc::new(RefCell::new(ListElement {
         elem: l[0],
         id: 0,
+        len: l.len(),
         left: None,
         right: None,
     }));
@@ -271,7 +262,7 @@ fn from_slice(l: &[i32]) -> Rc<RefCell<ListElement>> {
 
     let mut next_element = first_element.clone();
     for i in 1..l.len() {
-        next_element = insert_right(&next_element, l[i], i);
+        next_element = insert_right(&next_element, l[i], i, l.len());
     }
 
     first_element
@@ -279,13 +270,19 @@ fn from_slice(l: &[i32]) -> Rc<RefCell<ListElement>> {
 fn next_right(elem: &Rc<RefCell<ListElement>>) -> Rc<RefCell<ListElement>> {
     elem.borrow().right.as_ref().unwrap().clone()
 }
-fn insert_right(elem: &Rc<RefCell<ListElement>>, n: i32, id: usize) -> Rc<RefCell<ListElement>> {
+fn insert_right(
+    elem: &Rc<RefCell<ListElement>>,
+    n: i64,
+    id: usize,
+    len: usize,
+) -> Rc<RefCell<ListElement>> {
     let a = elem.clone();
     let b = elem.borrow().right.as_ref().unwrap().clone();
 
     let x = Rc::new(RefCell::new(ListElement {
         elem: n,
         id,
+        len,
         left: None,
         right: None,
     }));
@@ -298,17 +295,17 @@ fn insert_right(elem: &Rc<RefCell<ListElement>>, n: i32, id: usize) -> Rc<RefCel
     x
 }
 
-fn read_input(f: &str) -> Vec<i32> {
+fn read_input(f: &str) -> Vec<i64> {
     fs::read_to_string(f)
         .unwrap()
         .lines()
         .filter(|l| l.len() > 0)
-        .map(|s| s.parse::<i32>().unwrap())
-        .collect::<Vec<i32>>()
+        .map(|s| s.parse::<i64>().unwrap())
+        .collect::<Vec<i64>>()
 }
-fn solve_part1(f: &str) -> i32 {
+fn solve_part1(f: &str) -> i64 {
     let input = read_input(f);
-    let l = move_by_list(&input, input.len());
+    let l = mix_partial(&input, input.len());
     let zero_position = l.iter().position(|x| *x == 0).unwrap();
 
     l[(zero_position + 1000) % l.len()]
@@ -316,18 +313,17 @@ fn solve_part1(f: &str) -> i32 {
         + l[(zero_position + 3000) % l.len()]
 }
 
-fn solve_part2(f: &str) -> i32 {
-    /*
-    fs::read_to_string(f)
-        .unwrap()
-        .lines()
-        .count();
-     */
-    -1
+fn solve_part2(f: &str) -> i64 {
+    let input: Vec<i64> = read_input(f).iter().map(|x| x * 811589153).collect();
+    let l = mix_n(&input, 10);
+    let zero_position = l.iter().position(|x| *x == 0).unwrap();
+
+    l[(zero_position + 1000) % l.len()]
+        + l[(zero_position + 2000) % l.len()]
+        + l[(zero_position + 3000) % l.len()]
 }
 
 fn main() {
-    println!("part 1: {}", solve_part1("test.txt"));
     println!("part 1: {}", solve_part1("input.txt"));
-    //println!("part 2: {}", solve_part2("input.txt"));
+    println!("part 2: {}", solve_part2("input.txt"));
 }
