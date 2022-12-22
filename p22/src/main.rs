@@ -1,4 +1,4 @@
-use std::{fs, str::from_utf8};
+use std::{collections::HashMap, fs, str::from_utf8};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum Tile {
@@ -219,6 +219,29 @@ enum Direction {
     Left = 2,
     Up = 3,
 }
+impl Direction {
+    fn to_u8(&self) -> u8 {
+        match self {
+            Right => 0,
+            Down => 1,
+            Left => 2,
+            Up => 3,
+        }
+    }
+    fn flip(&self) -> Self {
+        match self {
+            Right => Left,
+            Down => Up,
+            Left => Right,
+            Up => Down,
+        }
+    }
+}
+fn flip_dir_u8(d: u8) -> u8 {
+    (d + 2) % 4
+}
+
+use Direction::*;
 #[derive(PartialEq, Eq, Debug, Clone)]
 enum Move {
     Sleep,
@@ -227,6 +250,267 @@ enum Move {
     Step(usize),
 }
 use Move::*;
+type EdgeFn = fn(&CubePosition, usize, isize) -> CubePosition;
+type Wraps = HashMap<(usize, u8), (usize, u8, EdgeFn)>;
+struct CubeMap {
+    faces: Vec<Vec<Vec<Tile>>>,
+    wraps: Wraps,
+    edge_len: usize,
+}
+
+fn straight_edge(p: &CubePosition, new_face: usize, edge_len: isize) -> CubePosition {
+    let new_dir = p.dir;
+    let new_row = if p.row == edge_len as isize {
+        0
+    } else if p.row == -1 {
+        edge_len as isize - 1
+    } else {
+        p.row
+    };
+
+    let new_col = if p.col == edge_len as isize {
+        0
+    } else if p.col == -1 {
+        edge_len as isize - 1
+    } else {
+        p.col
+    };
+    CubePosition::new(new_row, new_col, new_face, new_dir)
+}
+
+fn flip_edge(p: &CubePosition, new_face: usize, edge_len: isize) -> CubePosition {
+    let new_dir = (p.dir + 2) % 4;
+    let new_row = if p.row == edge_len as isize {
+        edge_len - 1
+    } else if p.row == -1 {
+        0
+    } else {
+        (edge_len - p.row) % edge_len
+    };
+
+    let new_col = if p.col == edge_len as isize {
+        panic!("unexpected flip")
+    } else if p.col == -1 {
+        panic!("unexpected flip")
+    } else {
+        (edge_len - p.col) % edge_len
+    };
+    CubePosition::new(new_row, new_col, new_face, new_dir)
+}
+fn rot_left_edge(p: &CubePosition, new_face: usize, edge_len: isize) -> CubePosition {
+    let new_dir = (p.dir + 3) % 4;
+    let new_row = if p.col == edge_len as isize {
+        edge_len - 1
+    } else if p.col == -1 {
+        0
+    } else {
+        panic!("unexpected rot left")
+    };
+
+    let new_col = if p.row == edge_len as isize {
+        panic!("unexpected rot left")
+    } else if p.row == -1 {
+        panic!("unexpected rot left")
+    } else {
+        p.row
+    };
+    CubePosition::new(new_row, new_col, new_face, new_dir)
+}
+
+fn rot_right_edge(p: &CubePosition, new_face: usize, edge_len: isize) -> CubePosition {
+    let new_dir = (p.dir + 1) % 4;
+    let new_col = if p.row == edge_len as isize {
+        edge_len - 1
+    } else if p.row == -1 {
+        0
+    } else {
+        panic!("unexpected rot right {}", p.row)
+    };
+
+    let new_row = if p.col == edge_len as isize {
+        panic!("unexpected column flip")
+    } else if p.col == -1 {
+        panic!("unexpected column flip")
+    } else {
+        p.col
+    };
+    CubePosition::new(new_row, new_col, new_face, new_dir)
+}
+
+impl CubeMap {
+    fn parse(inp: &[String]) -> Self {
+        let max_width = inp.iter().map(|l| l.len()).max().unwrap();
+
+        let inp = inp
+            .iter()
+            .map(|l| {
+                let padding = vec![b' '; max_width - l.len()];
+                let mut rv = l.as_bytes().to_vec();
+                rv.extend(padding.iter().copied());
+                rv
+            })
+            .collect::<Vec<Vec<u8>>>();
+
+        let edge_len = inp[0].len() / 3;
+        assert_eq!(edge_len * 3, inp[0].len());
+        assert_eq!(max_width, edge_len * 3);
+        assert_eq!(inp.len(), edge_len * 4);
+        let mut wraps = HashMap::new();
+        [
+            (
+                (1usize, Up),
+                (
+                    6usize,
+                    Right,
+                    rot_right_edge as EdgeFn,
+                    rot_left_edge as EdgeFn,
+                ),
+            ),
+            ((5, Down), (6, Left, rot_right_edge, rot_left_edge)),
+            ((1, Left), (4, Right, flip_edge, flip_edge)),
+            ((1, Down), (3, Down, straight_edge, straight_edge)),
+            ((1, Right), (2, Right, straight_edge, straight_edge)),
+            ((5, Left), (4, Left, straight_edge, straight_edge)),
+            ((5, Right), (2, Left, flip_edge, flip_edge)),
+            ((5, Up), (3, Up, straight_edge, straight_edge)),
+            ((2, Up), (6, Up, straight_edge, straight_edge)),
+            ((6, Up), (4, Up, straight_edge, straight_edge)),
+            ((4, Up), (3, Right, rot_right_edge, rot_left_edge)),
+            ((2, Down), (3, Left, rot_right_edge, rot_left_edge)),
+        ]
+        .iter()
+        .for_each(|x| {
+            let ((face1, dir1), (face2, dir2, fwd_edge, rev_edge)) = x;
+            wraps.insert((*face1, dir1.to_u8()), (*face2, dir2.to_u8(), *fwd_edge));
+
+            wraps.insert(
+                (*face2, flip_dir_u8(dir2.to_u8())),
+                (*face1, flip_dir_u8(dir1.to_u8()), *rev_edge),
+            );
+        });
+        let faces = [(1000, 1000), (0, 1), (0, 2), (1, 1), (2, 0), (2, 1), (3, 0)]
+            .iter()
+            .map(|(block_row, block_col)| {
+                if *block_row == 1000 {
+                    return vec![];
+                }
+                let mut rv = vec![];
+                for row in block_row * edge_len..(block_row + 1) * edge_len {
+                    //rv.push(inp[(block_col*edge_len)..((block_col+1)*edge_len)])
+                    rv.push(
+                        inp[row][(block_col * edge_len)..((block_col + 1) * edge_len)]
+                            .iter()
+                            .map(|b| Tile::from_byte(*b))
+                            .collect(),
+                    );
+                }
+                rv
+            })
+            .collect::<Vec<Vec<Vec<Tile>>>>();
+
+        CubeMap {
+            faces,
+            wraps,
+            edge_len,
+        }
+    }
+
+    fn step(&self, pos: CubePosition) -> CubePosition {
+        match pos.dir {
+            3 => {
+                // Up
+                let new_pos = CubePosition::new(pos.row - 1, pos.col, pos.face, pos.dir);
+                if new_pos.row < 0 {
+                    let (new_face, new_dir, edge_fn) =
+                        self.wraps.get(&(pos.face, pos.dir)).unwrap();
+                    let candidate_pos = edge_fn(&new_pos, *new_face, self.edge_len as isize);
+                    assert_eq!(*new_dir, candidate_pos.dir);
+                    candidate_pos
+                } else {
+                    new_pos
+                }
+            }
+            1 => {
+                // Down
+                let new_pos = CubePosition::new(pos.row + 1, pos.col, pos.face, pos.dir);
+                if new_pos.row >= self.edge_len as isize {
+                    let (new_face, new_dir, edge_fn) =
+                        self.wraps.get(&(pos.face, pos.dir)).unwrap();
+                    let candidate_pos = edge_fn(&new_pos, *new_face, self.edge_len as isize);
+                    assert_eq!(*new_dir, candidate_pos.dir);
+                    candidate_pos
+                } else {
+                    new_pos
+                }
+            }
+            2 => {
+                // Left
+                let new_pos = CubePosition::new(pos.row, pos.col - 1, pos.face, pos.dir);
+                if new_pos.col < 0 {
+                    let (new_face, new_dir, edge_fn) =
+                        self.wraps.get(&(pos.face, pos.dir)).unwrap();
+                    let candidate_pos = edge_fn(&new_pos, *new_face, self.edge_len as isize);
+                    assert_eq!(*new_dir, candidate_pos.dir);
+                    candidate_pos
+                } else {
+                    new_pos
+                }
+            }
+             0 => {
+                // Right
+                let new_pos = CubePosition::new(pos.row, pos.col + 1, pos.face, pos.dir);
+                if new_pos.col >= self.edge_len as isize {
+                    let (new_face, new_dir, edge_fn) =
+                        self.wraps.get(&(pos.face, pos.dir)).unwrap();
+                    let candidate_pos = edge_fn(&new_pos, *new_face, self.edge_len as isize);
+                    assert_eq!(*new_dir, candidate_pos.dir);
+                    candidate_pos
+                } else {
+                    new_pos
+                }
+            }
+            _ => panic!(),
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+struct CubePosition {
+    row: isize,
+    col: isize,
+    face: usize,
+    dir: u8,
+}
+impl CubePosition {
+    fn new(row: isize, col: isize, face: usize, dir: u8) -> Self {
+        CubePosition {
+            row,
+            col,
+            face,
+            dir,
+        }
+    }
+    fn same_face(&self, row: isize, col: isize) -> Self {
+        CubePosition {
+            row,
+            col,
+            face: self.face,
+            dir: self.dir,
+        }
+    }
+    fn other_face(&self, wraps: &Wraps) -> Self {
+        /*
+        let (new_face, new_dir) = wraps.get(&(self.face, self.dir)).unwrap();
+        CubePosition {
+            row: self.row,
+            col: self.col,
+            face: *new_face,
+            dir: *new_dir,
+        }
+        */
+        todo!()
+    }
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 struct Position {
@@ -284,6 +568,44 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_cube_parse() {
+        let inp = vec![
+            "    ........".to_string(),
+            "    ........".to_string(),
+            "    ........".to_string(),
+            "    ........".to_string(),
+            "    ....".to_string(),
+            "    ....".to_string(),
+            "    ....".to_string(),
+            "    ....".to_string(),
+            "........".to_string(),
+            "........".to_string(),
+            "........".to_string(),
+            "........".to_string(),
+            "....".to_string(),
+            "....".to_string(),
+            "....".to_string(),
+            "....".to_string(),
+        ];
+        let m = CubeMap::parse(&inp);
+        let p = CubePosition::new(0, 0, 1, Up.to_u8());
+        assert_eq!(m.edge_len, 4);
+        assert_eq!(m.step(p), CubePosition::new(0, 0, 6, Right.to_u8()));
+        assert_eq!(
+            m.step(CubePosition::new(3, 2, 5, Down.to_u8())),
+            CubePosition::new(2, 3, 6, Left.to_u8())
+        );
+        assert_eq!(
+            m.step(CubePosition::new(3, 0, 3, Left.to_u8())),
+            CubePosition::new(0, 3, 4, Down.to_u8())
+        );
+        assert_eq!(
+            m.step(CubePosition::new(1, 3, 2, Right.to_u8())),
+            CubePosition::new(3, 3, 5, Left.to_u8())
+        );
+    }
 
     #[test]
     fn test_map() {
@@ -373,11 +695,21 @@ fn solve_part1(f: &str) -> usize {
 }
 
 fn solve_part2(f: &str) -> i32 {
-    fs::read_to_string(f).unwrap().lines().count();
+    let inp = fs::read_to_string(f).unwrap();
+    let mut i = inp.split("\n\n");
+    let maze = i
+        .next()
+        .unwrap()
+        .lines()
+        .map(|s| s.to_string())
+        .collect::<Vec<String>>();
+    //let path = i.next().unwrap().lines().next().unwrap();
+    let map = CubeMap::parse(&maze);
+    //fs::read_to_string(f).unwrap().lines().count();
     -1
 }
 
 fn main() {
-    println!("part 1: {}", solve_part1("input.txt"));
-    //println!("part 2: {}", solve_part2("input.txt"));
+    //println!("part 1: {}", solve_part1("input.txt"));
+    println!("part 2: {}", solve_part2("input.txt"));
 }
