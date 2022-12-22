@@ -103,6 +103,39 @@ impl Map {
             dir: 0,
         }
     }
+    fn step(&self, pos: Position) -> Position {
+        if pos.dir % 2 == 0 {
+            // left or right move
+            let edges = self.row_edges(pos.row);
+            let row_len = edges.1 - edges.0;
+            let delta = if pos.dir == 0 { 1 } else { row_len - 1 };
+
+            let candidate_col = (pos.col - edges.0 + delta) % row_len + edges.0;
+            if self.map[pos.row][candidate_col] != Wall {
+                Position::new(pos.row, candidate_col, pos.dir)
+            } else {
+                pos
+            }
+        } else {
+            // up or down move
+            let edges = self.col_edges(pos.col);
+            let col_len = edges.1 - edges.0;
+            let delta = if pos.dir == 3 {
+                // up
+                col_len - 1
+            } else {
+                //down
+                1
+            };
+            //println!( "row: {}, col: {}, step: {}, edges: {:?}", row, col, delta, edges);
+            let candidate_row = (pos.row - edges.0 + delta) % col_len + edges.0;
+            if self.map[candidate_row][pos.col] != Wall {
+                Position::new(candidate_row, pos.col, pos.dir)
+            } else {
+                pos
+            }
+        }
+    }
     fn num_rows(&self) -> usize {
         self.row_edges.len()
     }
@@ -194,6 +227,7 @@ enum Move {
     Step(usize),
 }
 use Move::*;
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 struct Position {
     row: usize,
@@ -206,6 +240,12 @@ impl Position {
     }
     fn to_answer(&self) -> usize {
         (self.row + 1) * 1000 + (self.col + 1) * 4 + self.dir as usize
+    }
+    fn rotate_left(&self) -> Self {
+        Position::new(self.row, self.col, (self.dir + 3) % 4)
+    }
+    fn rotate_right(&self) -> Self {
+        Position::new(self.row, self.col, (self.dir + 1) % 4)
     }
 }
 
@@ -223,53 +263,18 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         self.path_iter.next().map(|p| {
-            match p {
-                Sleep => (),
-                RotateLeft => self.position.dir = (self.position.dir + 3) % 4,
-                RotateRight => self.position.dir = (self.position.dir + 1) % 4,
+            self.position = match p {
+                Sleep => self.position,
+                RotateLeft => self.position.rotate_left(),
+                RotateRight => self.position.rotate_right(),
                 Step(num) => {
-                    if self.position.dir % 2 == 0 {
-                        // left or right move
-                        let (row, mut col) = (self.position.row, self.position.col);
-                        let edges = self.map.row_edges(row);
-                        let row_len = edges.1 - edges.0;
-                        let delta = if self.position.dir == 0 {
-                            1
-                        } else {
-                            row_len - 1
-                        };
-                        for _ in 0..num {
-                            let candidate_col = (col - edges.0 + delta) % row_len + edges.0;
-                            if self.map.map[row][candidate_col] == Wall {
-                                break;
-                            }
-                            col = candidate_col;
-                        }
-                        self.position.col = col;
-                    } else {
-                        // up or down move
-                        let (mut row, col) = (self.position.row, self.position.col);
-                        let edges = self.map.col_edges(col);
-                        let col_len = edges.1 - edges.0;
-                        let delta = if self.position.dir == 3 {
-                            // up
-                            col_len - 1
-                        } else {
-                            //down
-                            1
-                        };
-                        //println!( "row: {}, col: {}, step: {}, edges: {:?}", row, col, delta, edges);
-                        for _ in 0..num {
-                            let candidate_row = (row - edges.0 + delta) % col_len + edges.0;
-                            if self.map.map[candidate_row][col] == Wall {
-                                break;
-                            }
-                            row = candidate_row;
-                        }
-                        self.position.row = row;
+                    let mut new_pos = self.position;
+                    for _ in 0..num {
+                        new_pos = self.map.step(new_pos);
                     }
+                    new_pos
                 }
-            }
+            };
 
             self.position
         })
@@ -341,7 +346,7 @@ mod test {
     #[test]
     fn test_part1() {
         assert_eq!(solve_part1("test.txt"), 6032);
-        assert_eq!(solve_part1("test.txt"), 164014);
+        assert_eq!(solve_part1("input.txt"), 164014);
     }
     #[test]
     fn test_part2() {}
