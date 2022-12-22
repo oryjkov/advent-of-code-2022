@@ -200,6 +200,14 @@ struct Position {
     col: usize,
     dir: u8,
 }
+impl Position {
+    fn new(row: usize, col: usize, dir: u8) -> Self {
+        Position { row, col, dir }
+    }
+    fn to_answer(&self) -> usize {
+        (self.row + 1) * 1000 + (self.col + 1) * 4 + self.dir as usize
+    }
+}
 
 struct MapIter<'a, It> {
     position: Position,
@@ -241,15 +249,16 @@ where
                     } else {
                         // up or down move
                         let (mut row, col) = (self.position.row, self.position.col);
-                        let edges = self.map.col_edges(row);
+                        let edges = self.map.col_edges(col);
                         let col_len = edges.1 - edges.0;
                         let delta = if self.position.dir == 3 {
                             // up
-                            1
+                            col_len - 1
                         } else {
                             //down
-                            col_len - 1
+                            1
                         };
+                        //println!( "row: {}, col: {}, step: {}, edges: {:?}", row, col, delta, edges);
                         for _ in 0..num {
                             let candidate_row = (row - edges.0 + delta) % col_len + edges.0;
                             if self.map.map[candidate_row][col] == Wall {
@@ -257,7 +266,7 @@ where
                             }
                             row = candidate_row;
                         }
-                        self.position.col = col;
+                        self.position.row = row;
                     }
                 }
             }
@@ -275,19 +284,25 @@ mod test {
     fn test_map() {
         let inp = vec![
             " ... ".to_string(),
-            ".... ".to_string(),
+            ".....".to_string(),
             ".... ".to_string(),
         ];
         let m = Map::parse(&inp);
         assert_eq!(m.row_edges(0), Edge(1, 4));
+        assert_eq!(m.row_edges(1), Edge(0, 5));
+        assert_eq!(m.row_edges(2), Edge(0, 4));
         assert_eq!(m.col_edges(0), Edge(1, 3));
+        assert_eq!(m.col_edges(1), Edge(0, 3));
+        assert_eq!(m.col_edges(2), Edge(0, 3));
+        assert_eq!(m.col_edges(3), Edge(0, 3));
+        assert_eq!(m.col_edges(4), Edge(1, 2));
         assert_eq!(m.num_rows(), 3);
         assert_eq!(m.num_cols(), 5);
     }
     #[test]
     fn test_walk() {
         let inp = vec![
-            " ... ".to_string(),
+            " .#. ".to_string(),
             ".... ".to_string(),
             ".... ".to_string(),
         ];
@@ -300,16 +315,17 @@ mod test {
                 dir: 0
             }
         );
-        let pi = PathIter::from_bytes("LR".as_bytes());
+        let pi = PathIter::from_bytes("_LR10R1L4".as_bytes());
         let mut walker = m.iter(pi);
-        assert_eq!(
-            walker.next().unwrap(),
-            Position {
-                row: 0,
-                col: 1,
-                dir: 1
-            }
-        );
+        assert_eq!(walker.next().unwrap(), Position::new(0, 1, 0));
+        assert_eq!(walker.next().unwrap(), Position::new(0, 1, 3));
+        assert_eq!(walker.next().unwrap(), Position::new(0, 1, 0));
+        assert_eq!(walker.next().unwrap(), Position::new(0, 1, 0));
+        assert_eq!(walker.next().unwrap(), Position::new(0, 1, 1));
+        assert_eq!(walker.next().unwrap(), Position::new(1, 1, 1));
+        assert_eq!(walker.next().unwrap(), Position::new(1, 1, 0));
+        assert_eq!(walker.next().unwrap(), Position::new(1, 1, 0));
+        assert_eq!(walker.next(), None);
     }
     #[test]
     fn test_path_iter() {
@@ -324,15 +340,31 @@ mod test {
     }
     #[test]
     fn test_part1() {
-        assert_eq!(solve_part1("test.txt"), -1);
+        assert_eq!(solve_part1("test.txt"), 6032);
+        assert_eq!(solve_part1("test.txt"), 164014);
     }
     #[test]
     fn test_part2() {}
 }
 
-fn solve_part1(f: &str) -> i32 {
-    fs::read_to_string(f).unwrap().lines().count();
-    -1
+fn solve_part1(f: &str) -> usize {
+    let inp = fs::read_to_string(f).unwrap();
+    let mut i = inp.split("\n\n");
+    let maze = i
+        .next()
+        .unwrap()
+        .lines()
+        .map(|s| s.to_string())
+        .collect::<Vec<String>>();
+    let path = i.next().unwrap().lines().next().unwrap();
+    let map = Map::parse(&maze);
+    let walker = map.iter(PathIter::from_bytes(path.as_bytes()));
+    /*
+    walker.for_each(|pos| {
+        println!("{:?}", pos);
+    });
+     */
+    walker.last().unwrap().to_answer()
 }
 
 fn solve_part2(f: &str) -> i32 {
@@ -342,5 +374,5 @@ fn solve_part2(f: &str) -> i32 {
 
 fn main() {
     println!("part 1: {}", solve_part1("input.txt"));
-    println!("part 2: {}", solve_part2("input.txt"));
+    //println!("part 2: {}", solve_part2("input.txt"));
 }
