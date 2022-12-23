@@ -29,13 +29,61 @@ impl Tile {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 struct Edge(usize, usize);
-struct Map {
+struct FlatMap {
     map: Vec<Vec<Tile>>,
     row_edges: Vec<Edge>,
     col_edges: Vec<Edge>,
 }
 
-impl Map {
+trait Position {
+    fn rotate_left(&self) -> Self;
+    fn rotate_right(&self) -> Self;
+}
+
+trait Map<P>
+where
+    P: Position,
+{
+    fn step(&self, pos: P) -> P;
+}
+
+impl Map<FlatPosition> for FlatMap {
+    fn step(&self, pos: FlatPosition) -> FlatPosition {
+        if pos.dir % 2 == 0 {
+            // left or right move
+            let edges = self.row_edges(pos.row);
+            let row_len = edges.1 - edges.0;
+            let delta = if pos.dir == 0 { 1 } else { row_len - 1 };
+
+            let candidate_col = (pos.col - edges.0 + delta) % row_len + edges.0;
+            if self.map[pos.row][candidate_col] != Wall {
+                FlatPosition::new(pos.row, candidate_col, pos.dir)
+            } else {
+                pos
+            }
+        } else {
+            // up or down move
+            let edges = self.col_edges(pos.col);
+            let col_len = edges.1 - edges.0;
+            let delta = if pos.dir == 3 {
+                // up
+                col_len - 1
+            } else {
+                //down
+                1
+            };
+            //println!( "row: {}, col: {}, step: {}, edges: {:?}", row, col, delta, edges);
+            let candidate_row = (pos.row - edges.0 + delta) % col_len + edges.0;
+            if self.map[candidate_row][pos.col] != Wall {
+                FlatPosition::new(candidate_row, pos.col, pos.dir)
+            } else {
+                pos
+            }
+        }
+    }
+}
+
+impl FlatMap {
     fn row_edges(&self, row: usize) -> Edge {
         self.row_edges[row]
     }
@@ -46,7 +94,7 @@ impl Map {
         let num_rows = inp.len();
         let num_cols = inp.iter().map(|l| l.len()).max().unwrap();
 
-        let mut m = Map {
+        let mut m = FlatMap {
             map: vec![vec![Void; num_cols]; num_rows],
             row_edges: vec![],
             col_edges: vec![],
@@ -101,46 +149,14 @@ impl Map {
 
         m
     }
-    fn top_left(&self) -> Position {
-        Position {
+    fn top_left(&self) -> FlatPosition {
+        FlatPosition {
             row: 0,
             col: self.row_edges(0).0,
             dir: 0,
         }
     }
-    fn step(&self, pos: Position) -> Position {
-        if pos.dir % 2 == 0 {
-            // left or right move
-            let edges = self.row_edges(pos.row);
-            let row_len = edges.1 - edges.0;
-            let delta = if pos.dir == 0 { 1 } else { row_len - 1 };
 
-            let candidate_col = (pos.col - edges.0 + delta) % row_len + edges.0;
-            if self.map[pos.row][candidate_col] != Wall {
-                Position::new(pos.row, candidate_col, pos.dir)
-            } else {
-                pos
-            }
-        } else {
-            // up or down move
-            let edges = self.col_edges(pos.col);
-            let col_len = edges.1 - edges.0;
-            let delta = if pos.dir == 3 {
-                // up
-                col_len - 1
-            } else {
-                //down
-                1
-            };
-            //println!( "row: {}, col: {}, step: {}, edges: {:?}", row, col, delta, edges);
-            let candidate_row = (pos.row - edges.0 + delta) % col_len + edges.0;
-            if self.map[candidate_row][pos.col] != Wall {
-                Position::new(candidate_row, pos.col, pos.dir)
-            } else {
-                pos
-            }
-        }
-    }
     #[allow(dead_code)]
     fn num_rows(&self) -> usize {
         self.row_edges.len()
@@ -150,7 +166,7 @@ impl Map {
         self.col_edges.len()
     }
 
-    fn iter<'a, It>(&'a self, path: It) -> MapIter<'a, It> {
+    fn iter<'a, It>(&'a self, path: It) -> MapIter<'a, It,Self, FlatPosition> {
         MapIter {
             position: self.top_left(),
             map: &self,
@@ -509,6 +525,22 @@ impl CubeMap {
         }
     }
 
+    fn at_mut(&mut self, p: CubePosition) -> &mut Tile {
+        &mut self.faces[p.face][p.row as usize][p.col as usize]
+    }
+    fn at(&self, p: CubePosition) -> Tile {
+        self.faces[p.face][p.row as usize][p.col as usize]
+    }
+    fn iter<'a, It>(&'a self, path: It) -> MapIter<'a, It, Self, CubePosition> {
+        MapIter {
+            position: CubePosition::new(0, 0, 1, 0),
+            map: &self,
+            path_iter: path,
+        }
+    }
+}
+
+impl Map<CubePosition> for CubeMap {
     fn step(&self, pos: CubePosition) -> CubePosition {
         let new_pos = match pos.dir {
             3 => {
@@ -571,19 +603,6 @@ impl CubeMap {
             new_pos
         }
     }
-    fn at_mut(&mut self, p: CubePosition) -> &mut Tile {
-        &mut self.faces[p.face][p.row as usize][p.col as usize]
-    }
-    fn at(&self, p: CubePosition) -> Tile {
-        self.faces[p.face][p.row as usize][p.col as usize]
-    }
-    fn iter<'a, It>(&'a self, path: It) -> CubeMapIter<'a, It> {
-        CubeMapIter {
-            position: CubePosition::new(0, 0, 1, 0),
-            map: &self,
-            path_iter: path,
-        }
-    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -602,12 +621,6 @@ impl CubePosition {
             dir,
         }
     }
-    fn rotate_left(&self) -> Self {
-        CubePosition::new(self.row, self.col, self.face, (self.dir + 3) % 4)
-    }
-    fn rotate_right(&self) -> Self {
-        CubePosition::new(self.row, self.col, self.face, (self.dir + 1) % 4)
-    }
     fn to_answer(&self, blocks: &Blocks, edge_len: isize) -> isize {
         println!("{:?}", self);
         ((blocks[self.face].0 as isize) * edge_len + self.row + 1) * 1000
@@ -616,70 +629,56 @@ impl CubePosition {
     }
 }
 
+impl Position for CubePosition {
+    fn rotate_left(&self) -> Self {
+        CubePosition::new(self.row, self.col, self.face, (self.dir + 3) % 4)
+    }
+    fn rotate_right(&self) -> Self {
+        CubePosition::new(self.row, self.col, self.face, (self.dir + 1) % 4)
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-struct Position {
+struct FlatPosition {
     row: usize,
     col: usize,
     dir: u8,
 }
-impl Position {
+impl FlatPosition {
     fn new(row: usize, col: usize, dir: u8) -> Self {
-        Position { row, col, dir }
+        FlatPosition { row, col, dir }
     }
     fn to_answer(&self) -> usize {
         (self.row + 1) * 1000 + (self.col + 1) * 4 + self.dir as usize
     }
+}
+
+impl Position for FlatPosition {
     fn rotate_left(&self) -> Self {
-        Position::new(self.row, self.col, (self.dir + 3) % 4)
+        FlatPosition::new(self.row, self.col, (self.dir + 3) % 4)
     }
     fn rotate_right(&self) -> Self {
-        Position::new(self.row, self.col, (self.dir + 1) % 4)
+        FlatPosition::new(self.row, self.col, (self.dir + 1) % 4)
     }
 }
 
-struct MapIter<'a, It> {
-    position: Position,
-    map: &'a Map,
+struct MapIter<'a, It, M, P>
+where
+    M: Map<P>,
+    P: Position,
+{
+    position: P,
+    map: &'a M,
     path_iter: It,
 }
 
-impl<'a, It> Iterator for MapIter<'a, It>
+impl<'a, It, M, P> Iterator for MapIter<'a, It, M, P>
 where
     It: Iterator<Item = Move>,
+    M: Map<P>,
+    P: Position + Copy,
 {
-    type Item = Position;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.path_iter.next().map(|p| {
-            self.position = match p {
-                Sleep => self.position,
-                RotateLeft => self.position.rotate_left(),
-                RotateRight => self.position.rotate_right(),
-                Step(num) => {
-                    let mut new_pos = self.position;
-                    for _ in 0..num {
-                        new_pos = self.map.step(new_pos);
-                    }
-                    new_pos
-                }
-            };
-
-            self.position
-        })
-    }
-}
-
-struct CubeMapIter<'a, It> {
-    position: CubePosition,
-    map: &'a CubeMap,
-    path_iter: It,
-}
-
-impl<'a, It> Iterator for CubeMapIter<'a, It>
-where
-    It: Iterator<Item = Move>,
-{
-    type Item = CubePosition;
+    type Item = P;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.path_iter.next().map(|p| {
@@ -779,7 +778,7 @@ mod test {
             ".....".to_string(),
             ".... ".to_string(),
         ];
-        let m = Map::parse(&inp);
+        let m = FlatMap::parse(&inp);
         assert_eq!(m.row_edges(0), Edge(1, 4));
         assert_eq!(m.row_edges(1), Edge(0, 5));
         assert_eq!(m.row_edges(2), Edge(0, 4));
@@ -798,10 +797,10 @@ mod test {
             ".... ".to_string(),
             ".... ".to_string(),
         ];
-        let m = Map::parse(&inp);
+        let m = FlatMap::parse(&inp);
         assert_eq!(
             m.top_left(),
-            Position {
+            FlatPosition {
                 row: 0,
                 col: 1,
                 dir: 0
@@ -809,14 +808,14 @@ mod test {
         );
         let pi = PathIter::from_bytes("_LR10R1L4".as_bytes());
         let mut walker = m.iter(pi);
-        assert_eq!(walker.next().unwrap(), Position::new(0, 1, 0));
-        assert_eq!(walker.next().unwrap(), Position::new(0, 1, 3));
-        assert_eq!(walker.next().unwrap(), Position::new(0, 1, 0));
-        assert_eq!(walker.next().unwrap(), Position::new(0, 1, 0));
-        assert_eq!(walker.next().unwrap(), Position::new(0, 1, 1));
-        assert_eq!(walker.next().unwrap(), Position::new(1, 1, 1));
-        assert_eq!(walker.next().unwrap(), Position::new(1, 1, 0));
-        assert_eq!(walker.next().unwrap(), Position::new(1, 1, 0));
+        assert_eq!(walker.next().unwrap(), FlatPosition::new(0, 1, 0));
+        assert_eq!(walker.next().unwrap(), FlatPosition::new(0, 1, 3));
+        assert_eq!(walker.next().unwrap(), FlatPosition::new(0, 1, 0));
+        assert_eq!(walker.next().unwrap(), FlatPosition::new(0, 1, 0));
+        assert_eq!(walker.next().unwrap(), FlatPosition::new(0, 1, 1));
+        assert_eq!(walker.next().unwrap(), FlatPosition::new(1, 1, 1));
+        assert_eq!(walker.next().unwrap(), FlatPosition::new(1, 1, 0));
+        assert_eq!(walker.next().unwrap(), FlatPosition::new(1, 1, 0));
         assert_eq!(walker.next(), None);
     }
     #[test]
@@ -845,7 +844,6 @@ mod test {
     #[test]
     fn test_part2() {
         assert_eq!(solve_part2("input.txt"), 47525);
-
     }
 }
 
@@ -859,7 +857,7 @@ fn solve_part1(f: &str) -> usize {
         .map(|s| s.to_string())
         .collect::<Vec<String>>();
     let path = i.next().unwrap().lines().next().unwrap();
-    let map = Map::parse(&maze);
+    let map = FlatMap::parse(&maze);
     let walker = map.iter(PathIter::from_bytes(path.as_bytes()));
     /*
     walker.for_each(|pos| {
