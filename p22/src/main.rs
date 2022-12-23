@@ -5,6 +5,7 @@ enum Tile {
     Void,
     Empty,
     Wall,
+    Dir(u8),
 }
 use Tile::*;
 impl Tile {
@@ -13,6 +14,15 @@ impl Tile {
             b' ' => Void,
             b'.' => Empty,
             b'#' => Wall,
+            _ => panic!("unknown tile character"),
+        }
+    }
+    fn to_byte(&self) -> u8 {
+        match self {
+            Void => b'!',
+            Empty => b'.',
+            Wall => b'#',
+            Dir(b) => *b,
             _ => panic!("unknown tile character"),
         }
     }
@@ -152,6 +162,36 @@ impl Map {
     }
 }
 
+struct FlatPathIter<'a> {
+    steps_left: usize,
+    i: PathIter<'a>,
+}
+impl<'a> FlatPathIter<'a> {
+    fn from_path_iter(path_iter: PathIter<'a>) -> Self {
+        FlatPathIter {
+            steps_left: 0,
+            i: path_iter,
+        }
+    }
+}
+impl<'a> Iterator for FlatPathIter<'a> {
+    type Item = Move;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.steps_left > 0 {
+            self.steps_left -= 1;
+            Some(Step(1))
+        } else {
+            self.i.next().map(|m| {
+                if let Step(n) = m {
+                    self.steps_left = n - 1;
+                    Step(1)
+                } else {
+                    m
+                }
+            })
+        }
+    }
+}
 struct PathIter<'a> {
     pre_parsed: Option<Move>,
     i: core::slice::Iter<'a, u8>,
@@ -228,12 +268,13 @@ impl Direction {
             Up => 3,
         }
     }
-    fn flip(&self) -> Self {
-        match self {
-            Right => Left,
-            Down => Up,
-            Left => Right,
-            Up => Down,
+    fn u8_to_printable(d: u8) -> u8 {
+        match d {
+            0 => b'>',
+            1 => b'v',
+            2 => b'<',
+            3 => b'^',
+            _ => panic!("oopsie"),
         }
     }
 }
@@ -252,10 +293,14 @@ enum Move {
 use Move::*;
 type EdgeFn = fn(&CubePosition, usize, isize) -> CubePosition;
 type Wraps = HashMap<(usize, u8), (usize, u8, EdgeFn)>;
+type Face = Vec<Vec<Tile>>;
+type Blocks = Vec<(usize, usize, usize)>;
+#[derive(Clone)]
 struct CubeMap {
-    faces: Vec<Vec<Vec<Tile>>>,
+    faces: Vec<Face>,
     wraps: Wraps,
     edge_len: usize,
+    blocks: Blocks,
 }
 
 fn straight_edge(p: &CubePosition, new_face: usize, edge_len: isize) -> CubePosition {
@@ -280,20 +325,20 @@ fn straight_edge(p: &CubePosition, new_face: usize, edge_len: isize) -> CubePosi
 
 fn flip_edge(p: &CubePosition, new_face: usize, edge_len: isize) -> CubePosition {
     let new_dir = (p.dir + 2) % 4;
-    let new_row = if p.row == edge_len as isize {
+    let new_col = if p.col == edge_len as isize {
         edge_len - 1
-    } else if p.row == -1 {
+    } else if p.col == -1 {
         0
     } else {
-        (edge_len - p.row) % edge_len
+        (edge_len - p.col) % edge_len
     };
 
-    let new_col = if p.col == edge_len as isize {
+    let new_row = if p.row == edge_len as isize {
         panic!("unexpected flip")
-    } else if p.col == -1 {
+    } else if p.row == -1 {
         panic!("unexpected flip")
     } else {
-        (edge_len - p.col) % edge_len
+        (edge_len - 1 - p.row) % edge_len
     };
     CubePosition::new(new_row, new_col, new_face, new_dir)
 }
@@ -337,8 +382,51 @@ fn rot_right_edge(p: &CubePosition, new_face: usize, edge_len: isize) -> CubePos
     CubePosition::new(new_row, new_col, new_face, new_dir)
 }
 
+fn rotate<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>>
+where
+    T: Clone,
+{
+    let mut tmp = transpose(v);
+    tmp.iter_mut().for_each(|row| row.reverse());
+    tmp
+}
+fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>>
+where
+    T: Clone,
+{
+    assert!(!v.is_empty());
+    (0..v[0].len())
+        .map(|i| v.iter().map(|inner| inner[i].clone()).collect::<Vec<T>>())
+        .collect()
+}
+
 impl CubeMap {
-    fn parse(inp: &[String]) -> Self {
+    fn print(&self) {
+        let mut buf = vec![vec![b' '; self.edge_len * 4]; self.edge_len * 4];
+        let blocks = vec![
+            (1000, 1000, 0),
+            (0, 1, 0),
+            (0, 2, 0),
+            (1, 1, 0),
+            (2, 0, 0),
+            (2, 1, 0),
+            (3, 0, 0),
+        ];
+
+        for (idx, block) in blocks.iter().enumerate().skip(1) {
+            let r_off = block.0 * self.edge_len;
+            let c_off = block.1 * self.edge_len;
+            for r in 0..self.edge_len {
+                for c in 0..self.edge_len {
+                    buf[r_off + r][c_off + c] = self.faces[idx][r][c].to_byte();
+                }
+            }
+        }
+        buf.iter().for_each(|row| {
+            println!("{}", from_utf8(row).unwrap());
+        })
+    }
+    fn parse(inp: &[String], blocks: &Blocks, edge_len: usize) -> Self {
         let max_width = inp.iter().map(|l| l.len()).max().unwrap();
 
         let inp = inp
@@ -351,10 +439,10 @@ impl CubeMap {
             })
             .collect::<Vec<Vec<u8>>>();
 
-        let edge_len = inp[0].len() / 3;
-        assert_eq!(edge_len * 3, inp[0].len());
-        assert_eq!(max_width, edge_len * 3);
-        assert_eq!(inp.len(), edge_len * 4);
+        //let edge_len = inp[0].len() / 3;
+        //assert_eq!(edge_len * 3, inp[0].len());
+        //assert_eq!(max_width, edge_len * 3);
+        //assert_eq!(inp.len(), edge_len * 4);
         let mut wraps = HashMap::new();
         [
             (
@@ -388,21 +476,29 @@ impl CubeMap {
                 (*face1, flip_dir_u8(dir1.to_u8()), *rev_edge),
             );
         });
-        let faces = [(1000, 1000), (0, 1), (0, 2), (1, 1), (2, 0), (2, 1), (3, 0)]
+        let faces = blocks
             .iter()
-            .map(|(block_row, block_col)| {
+            .map(|(block_row, block_col, rots)| {
                 if *block_row == 1000 {
                     return vec![];
                 }
                 let mut rv = vec![];
+                println!("block {} {} {}", block_row, block_col, rots);
                 for row in block_row * edge_len..(block_row + 1) * edge_len {
                     //rv.push(inp[(block_col*edge_len)..((block_col+1)*edge_len)])
                     rv.push(
                         inp[row][(block_col * edge_len)..((block_col + 1) * edge_len)]
                             .iter()
-                            .map(|b| Tile::from_byte(*b))
+                            .map(|b| {
+                                let rv = Tile::from_byte(*b);
+                                assert_ne!(rv, Void);
+                                rv
+                            })
                             .collect(),
                     );
+                }
+                for _ in 0..*rots {
+                    rv = rotate(rv);
                 }
                 rv
             })
@@ -412,11 +508,12 @@ impl CubeMap {
             faces,
             wraps,
             edge_len,
+            blocks: blocks.clone(),
         }
     }
 
     fn step(&self, pos: CubePosition) -> CubePosition {
-        match pos.dir {
+        let new_pos = match pos.dir {
             3 => {
                 // Up
                 let new_pos = CubePosition::new(pos.row - 1, pos.col, pos.face, pos.dir);
@@ -456,7 +553,7 @@ impl CubeMap {
                     new_pos
                 }
             }
-             0 => {
+            0 => {
                 // Right
                 let new_pos = CubePosition::new(pos.row, pos.col + 1, pos.face, pos.dir);
                 if new_pos.col >= self.edge_len as isize {
@@ -470,6 +567,24 @@ impl CubeMap {
                 }
             }
             _ => panic!(),
+        };
+        if self.at(new_pos) == Wall {
+            pos
+        } else {
+            new_pos
+        }
+    }
+    fn at_mut(&mut self, p: CubePosition) -> &mut Tile {
+        &mut self.faces[p.face][p.row as usize][p.col as usize]
+    }
+    fn at(&self, p: CubePosition) -> Tile {
+        self.faces[p.face][p.row as usize][p.col as usize]
+    }
+    fn iter<'a, It>(&'a self, path: It) -> CubeMapIter<'a, It> {
+        CubeMapIter {
+            position: CubePosition::new(0, 0, 1, 0),
+            map: &self,
+            path_iter: path,
         }
     }
 }
@@ -490,25 +605,17 @@ impl CubePosition {
             dir,
         }
     }
-    fn same_face(&self, row: isize, col: isize) -> Self {
-        CubePosition {
-            row,
-            col,
-            face: self.face,
-            dir: self.dir,
-        }
+    fn rotate_left(&self) -> Self {
+        CubePosition::new(self.row, self.col, self.face, (self.dir + 3) % 4)
     }
-    fn other_face(&self, wraps: &Wraps) -> Self {
-        /*
-        let (new_face, new_dir) = wraps.get(&(self.face, self.dir)).unwrap();
-        CubePosition {
-            row: self.row,
-            col: self.col,
-            face: *new_face,
-            dir: *new_dir,
-        }
-        */
-        todo!()
+    fn rotate_right(&self) -> Self {
+        CubePosition::new(self.row, self.col, self.face, (self.dir + 1) % 4)
+    }
+    fn to_answer(&self, blocks: &Blocks, edge_len: isize) -> isize {
+        println!("{:?}", self);
+        ((blocks[self.face].0 as isize) * edge_len + self.row + 1) * 1000
+            + ((blocks[self.face].1 as isize) * edge_len + self.col + 1) * 4
+            + self.dir as isize
     }
 }
 
@@ -565,8 +672,42 @@ where
     }
 }
 
+struct CubeMapIter<'a, It> {
+    position: CubePosition,
+    map: &'a CubeMap,
+    path_iter: It,
+}
+
+impl<'a, It> Iterator for CubeMapIter<'a, It>
+where
+    It: Iterator<Item = Move>,
+{
+    type Item = CubePosition;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.path_iter.next().map(|p| {
+            self.position = match p {
+                Sleep => self.position,
+                RotateLeft => self.position.rotate_left(),
+                RotateRight => self.position.rotate_right(),
+                Step(num) => {
+                    let mut new_pos = self.position;
+                    for _ in 0..num {
+                        new_pos = self.map.step(new_pos);
+                    }
+                    new_pos
+                }
+            };
+
+            self.position
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use std::vec;
+
     use super::*;
 
     #[test]
@@ -589,7 +730,16 @@ mod test {
             "....".to_string(),
             "....".to_string(),
         ];
-        let m = CubeMap::parse(&inp);
+        let blocks = vec![
+            (1000, 1000, 0),
+            (0, 1, 0),
+            (0, 2, 0),
+            (1, 1, 0),
+            (2, 0, 0),
+            (2, 1, 0),
+            (3, 0, 0),
+        ];
+        let m = CubeMap::parse(&inp, &blocks, 4);
         let p = CubePosition::new(0, 0, 1, Up.to_u8());
         assert_eq!(m.edge_len, 4);
         assert_eq!(m.step(p), CubePosition::new(0, 0, 6, Right.to_u8()));
@@ -603,8 +753,26 @@ mod test {
         );
         assert_eq!(
             m.step(CubePosition::new(1, 3, 2, Right.to_u8())),
-            CubePosition::new(3, 3, 5, Left.to_u8())
+            CubePosition::new(2, 3, 5, Left.to_u8())
         );
+
+        for face in 1..=6 {
+            for dir in 0..3 {
+                for row in 0..4 {
+                    for col in 0..4 {
+                        let p0 = CubePosition::new(row, col, face, dir);
+                        let mut p = p0.clone();
+                        for i in 0..4 * 4 {
+                            p = m.step(p);
+                            if i != 4 * 4 - 1 {
+                                assert_ne!(p0, p);
+                            }
+                        }
+                        assert_eq!(p0, p);
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -671,7 +839,17 @@ mod test {
         assert_eq!(solve_part1("input.txt"), 164014);
     }
     #[test]
-    fn test_part2() {}
+    fn test_rotate() {
+        let v = vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]];
+        let v2 = vec![vec![7, 4, 1], vec![8, 5, 2], vec![9, 6, 3]];
+
+        assert_eq!(rotate(v), v2);
+    }
+    #[test]
+    fn test_part2() {
+        assert_eq!(solve_part2("input.txt"), 47525);
+
+    }
 }
 
 fn solve_part1(f: &str) -> usize {
@@ -694,7 +872,7 @@ fn solve_part1(f: &str) -> usize {
     walker.last().unwrap().to_answer()
 }
 
-fn solve_part2(f: &str) -> i32 {
+fn solve_part2(f: &str) -> isize {
     let inp = fs::read_to_string(f).unwrap();
     let mut i = inp.split("\n\n");
     let maze = i
@@ -703,13 +881,60 @@ fn solve_part2(f: &str) -> i32 {
         .lines()
         .map(|s| s.to_string())
         .collect::<Vec<String>>();
-    //let path = i.next().unwrap().lines().next().unwrap();
-    let map = CubeMap::parse(&maze);
+    let path = i.next().unwrap().lines().next().unwrap();
+    let blocks = vec![
+        (1000, 1000, 0),
+        (0, 1, 0),
+        (0, 2, 0),
+        (1, 1, 0),
+        (2, 0, 0),
+        (2, 1, 0),
+        (3, 0, 0),
+    ];
+    let map = CubeMap::parse(&maze, &blocks, 50);
+    let walker = map.iter(PathIter::from_bytes(path.as_bytes()));
+    walker
+        .last()
+        .unwrap()
+        .to_answer(&map.blocks, map.edge_len as isize)
+    //fs::read_to_string(f).unwrap().lines().count();
+}
+
+fn solve_part2_test() -> isize {
+    let inp = fs::read_to_string("test.txt").unwrap();
+    let mut i = inp.split("\n\n");
+    let maze = i
+        .next()
+        .unwrap()
+        .lines()
+        .map(|s| s.to_string())
+        .collect::<Vec<String>>();
+    let path = i.next().unwrap().lines().next().unwrap();
+    let blocks = vec![
+        (1000, 1000, 0),
+        (0, 2, 0), // 1
+        (2, 3, 2), // 2
+        (1, 2, 0), // 3
+        (1, 1, 3), // 4
+        (2, 2, 0), // 5
+        (1, 0, 3), // 6
+    ];
+    let map = CubeMap::parse(&maze, &blocks, 4);
+    let mut w = map.clone();
+    //map.print();
+    let walker = map.iter(FlatPathIter::from_path_iter(PathIter::from_bytes(
+        path.as_bytes(),
+    )));
+    walker.take(500).for_each(|pos| {
+        *w.at_mut(pos) = Dir(Direction::u8_to_printable(pos.dir)); //Dir(pos.dir)
+    });
+    w.print();
     //fs::read_to_string(f).unwrap().lines().count();
     -1
 }
 
 fn main() {
-    //println!("part 1: {}", solve_part1("input.txt"));
+    println!("part 1: {}", solve_part1("input.txt"));
     println!("part 2: {}", solve_part2("input.txt"));
+    println!("part 2: {}", solve_part2_test());
 }
