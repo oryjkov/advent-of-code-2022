@@ -1,4 +1,4 @@
-use std::{fs, num, str::from_utf8};
+use std::{fs, str::from_utf8};
 
 #[cfg(test)]
 mod test {
@@ -38,10 +38,7 @@ mod test {
 
 type Field = Vec<Vec<Tile>>;
 #[derive(Clone)]
-struct Elf {
-    id: usize,
-    move_to: Option<(usize, usize)>,
-}
+struct Elf {}
 #[derive(Clone)]
 struct Tile {
     elf: Option<Elf>,
@@ -66,7 +63,6 @@ impl Tile {
 }
 #[derive(Clone)]
 struct Proposal {
-    elf_id: usize,
     from_row: usize,
     from_col: usize,
 }
@@ -93,7 +89,6 @@ impl Dir {
             NW => (-1, -1),
             SE => (1, 1),
             SW => (1, -1),
-            _ => panic!("wrong to"),
         }
     }
     fn apply_to_rc(&self, rc: (usize, usize)) -> (usize, usize) {
@@ -168,6 +163,7 @@ impl Map {
             .map(|row| row[tl.1..=br.1].iter().filter(|t| t.elf.is_none()).count())
             .sum()
     }
+    #[allow(dead_code)]
     fn print(&self) {
         let [tl, br] = self.find_boundaries();
         for r in tl.0 - 1..=br.0 + 1 {
@@ -190,21 +186,13 @@ impl Map {
         let target_width = width * 3;
         let target_height = height * 3;
 
-        let mut elf_id = 0;
-
         let mut map = vec![vec![Tile::new(); target_width]; height];
         map.extend(inp.iter().map(|row| {
             let mut rv = vec![Tile::new(); width];
             rv.extend(row.iter().map(|c| {
                 let e = match c {
                     b'.' => None,
-                    b'#' => {
-                        elf_id += 1;
-                        Some(Elf {
-                            id: elf_id,
-                            move_to: None,
-                        })
-                    }
+                    b'#' => Some(Elf {}),
                     _ => panic!("wrong char"),
                 };
                 Tile {
@@ -236,7 +224,6 @@ impl Map {
                 // whether this elf has any neighbours at all.
                 let mut seen_elves = false;
 
-                let elf_id = self.map[row][col].elf.as_ref().unwrap().id;
                 let dir_id = self.next_dir;
 
                 // Try the 4 directions in order starting from dir_id. If one
@@ -268,7 +255,6 @@ impl Map {
                     let rc = dir.apply_to_rc((row, col));
                     let props = &mut self.map[rc.0][rc.1].props;
                     props.push(Proposal {
-                        elf_id,
                         from_row: row,
                         from_col: col,
                     });
