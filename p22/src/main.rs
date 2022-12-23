@@ -23,7 +23,6 @@ impl Tile {
             Empty => b'.',
             Wall => b'#',
             Dir(b) => *b,
-            _ => panic!("unknown tile character"),
         }
     }
 }
@@ -64,8 +63,6 @@ impl Map {
             .map
             .iter()
             .map(|row| {
-                let mut left_edge = 0;
-                let mut right_edge = row.len();
                 let mut i = 0;
                 while let Some(t) = row.get(i) {
                     if *t != Void {
@@ -73,14 +70,14 @@ impl Map {
                     }
                     i += 1;
                 }
-                left_edge = i;
+                let left_edge = i;
                 while let Some(t) = row.get(i) {
                     if *t == Void {
                         break;
                     }
                     i += 1;
                 }
-                right_edge = i;
+                let right_edge = i;
 
                 Edge(left_edge, right_edge)
             })
@@ -88,17 +85,15 @@ impl Map {
 
         for col in 0..num_cols {
             m.col_edges.push({
-                let mut top_edge = 0;
-                let mut bottom_edge = num_rows;
                 let mut i = 0;
                 while i < num_rows && m.map[i][col] == Void {
                     i += 1;
                 }
-                top_edge = i;
+                let top_edge = i;
                 while i < num_rows && m.map[i][col] != Void {
                     i += 1;
                 }
-                bottom_edge = i;
+                let bottom_edge = i;
 
                 Edge(top_edge, bottom_edge)
             });
@@ -146,9 +141,11 @@ impl Map {
             }
         }
     }
+    #[allow(dead_code)]
     fn num_rows(&self) -> usize {
         self.row_edges.len()
     }
+    #[allow(dead_code)]
     fn num_cols(&self) -> usize {
         self.col_edges.len()
     }
