@@ -153,6 +153,12 @@ impl<T> IndexMut<Dir> for [T; 5] {
 }
 
 impl Map {
+    fn height(&self) -> usize {
+        self.rows.len()
+    }
+    fn width(&self) -> usize {
+        self.cols.len()
+    }
     fn parse(inp: &[Vec<u8>]) -> Map {
         let height = inp.len() as u8;
         let width = inp[0].len() as u8;
@@ -160,7 +166,7 @@ impl Map {
         let mut rows = vec![vec![]; 2 + height as usize];
         let mut cols = vec![vec![]; 2 + width as usize];
         inp.iter().enumerate().for_each(|(row_num, in_row)| {
-            println!("#{}#", from_utf8(in_row).unwrap());
+            //println!("#{}#", from_utf8(in_row).unwrap());
             in_row
                 .iter()
                 .enumerate()
@@ -227,6 +233,20 @@ impl Map {
             }
         }
     }
+    fn at1(&self, n: usize, p: Pos) -> bool {
+        for bliz in &self.rows[p.0 + 1] {
+            if bliz.at(n, p.1 as isize) {
+                return false;
+            }
+        }
+        for bliz in &self.cols[p.1 + 1] {
+            if bliz.at(n, p.0 as isize) {
+                return false;
+            }
+        }
+        true
+    }
+
     fn at(&self, n: usize, p: Pos) -> [usize; 5] {
         //println!("at {:?}", p);
         let mut rv = [0; 5];
@@ -243,6 +263,67 @@ impl Map {
 
 type Path = Vec<Dir>;
 
+fn solve2(m: &Map) -> usize {
+    let mut can_be = vec![vec![vec![10000; m.width()]; m.height()]; 1];
+    let mut n = 1;
+    loop {
+        can_be.push(vec![vec![10000; m.width()]; m.height()]);
+        can_be[n][1][1] = if m.at1(n, Pos(0, 0)) { n } else { 10000 };
+        for r in 1..(m.height() - 1) {
+            for c in 1..(m.width() - 1) {
+                if r == 1 && c == 1 {
+                    continue;
+                }
+                can_be[n][r][c] = if m.at1(n, Pos(r - 1, c - 1)) {
+                    [
+                        can_be[n - 1][r][c],
+                        can_be[n - 1][r - 1][c],
+                        can_be[n - 1][r + 1][c],
+                        can_be[n - 1][r][c - 1],
+                        can_be[n - 1][r][c + 1],
+                    ]
+                    .into_iter()
+                    .min()
+                    .unwrap()
+                } else {
+                    10000
+                };
+                if can_be[n][r][c] < 10000 {
+                    can_be[n][r][c] += 1;
+                }
+            }
+        }
+        /*
+        println!("Minute {n}");
+        for r in 1..(m.height() - 1) {
+            for c in 1..(m.width() - 1) {
+                print!(
+                    "{:3}",
+                    if can_be[n][r][c] == 10000 {
+                        99
+                    } else {
+                        can_be[n][r][c]
+                    }
+                );
+            }
+            print!("   |   ");
+            for c in 1..(m.width() - 1) {
+                print!("{} ", if m.at1(n, Pos(r - 1, c - 1)) { 1 } else { 0 });
+            }
+            println!();
+        }
+        println!("checking in {n},{},{} = {}", r, c, can_be[n][r][c]);
+         */
+        let r = m.height() - 2;
+        let c = m.width() - 2;
+        if can_be[n][r][c] < 10000 {
+            break;
+        }
+        n = n + 1;
+    }
+    n+1
+}
+
 fn solve(m: &Map) -> usize {
     let mut path = vec![];
     let mut min_len = 100000;
@@ -255,7 +336,7 @@ fn solve(m: &Map) -> usize {
             println!("starting at n={n}, min len: {}", min_len);
         }
         path.push(Dir::Same);
-        if n > 3 {
+        if n > 5 {
             break;
         }
     }
@@ -265,19 +346,22 @@ fn solve(m: &Map) -> usize {
 fn walk(m: &Map, path: &mut Path, min_len: &mut usize, pos: Pos) -> bool {
     use Dir::*;
     let n = path.len();
-    if n >= *min_len {
+    let br = m.bottom_right();
+
+    let steps_remaining = (br.0 - pos.0) + (br.1 - pos.1);
+    if n + steps_remaining >= *min_len {
         return false;
     }
-    let br = m.bottom_right();
+
     if pos == br {
         *min_len = n;
         println!("len: {}", path.len());
         return true;
     }
     let dirs = if br.1 - pos.1 > br.0 - pos.0 {
-        [Right, Down, Same, Up, Left]
+        [Right, Down, Same, Up] //, Left]
     } else {
-        [Down, Right, Same, Up, Left]
+        [Down, Right, Same, Left] //, Left, Up]
     };
     let neibs = m.at(n + 1, pos);
     for dir in dirs {
@@ -315,7 +399,7 @@ fn read_input(f: &str) -> Map {
 
 fn solve_part1(f: &str) -> usize {
     let m = read_input(f);
-    solve(&m)
+    solve2(&m)
 }
 
 fn solve_part2(f: &str) -> i32 {
@@ -324,6 +408,7 @@ fn solve_part2(f: &str) -> i32 {
 }
 
 fn main() {
+    //println!("part 1: {}", solve_part1("test.txt"));
     println!("part 1: {}", solve_part1("input.txt"));
-    println!("part 2: {}", solve_part2("input.txt"));
+    //println!("part 2: {}", solve_part2("input.txt"));
 }
